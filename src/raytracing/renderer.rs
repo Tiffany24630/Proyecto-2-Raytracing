@@ -48,7 +48,7 @@ impl Renderer {
         let in_shadow = closest_hit(&shadow_ray, objects, 0.001, light_distance - 0.001).is_some();
 
         shade(
-            hit.albedo,
+            hit.material,
             hit.normal,
             light_direction,
             -ray.direction,
