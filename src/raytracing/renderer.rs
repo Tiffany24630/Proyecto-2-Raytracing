@@ -1,6 +1,6 @@
 use std::{fs, io, path::Path};
 
-use crate::{geometry::Object, math::Vec3};
+use crate::{geometry::Object, materials::TextureSet, math::Vec3};
 
 use super::{Camera, Light, Ray, closest_hit, lighting::shade};
 
@@ -19,7 +19,13 @@ impl Renderer {
         }
     }
 
-    pub fn render(&self, camera: &Camera, objects: &[Box<dyn Object>], light: &Light) -> Vec<Vec3> {
+    pub fn render(
+        &self,
+        camera: &Camera,
+        objects: &[Box<dyn Object>],
+        light: &Light,
+        textures: &TextureSet,
+    ) -> Vec<Vec3> {
         let mut pixels = Vec::with_capacity(self.width * self.height);
 
         for y in 0..self.height {
@@ -27,14 +33,20 @@ impl Renderer {
             for x in 0..self.width {
                 let u = (x as f32 + 0.5) / self.width as f32;
                 let ray = camera.ray(u, v);
-                pixels.push(self.trace_primary(&ray, objects, light));
+                pixels.push(self.trace_primary(&ray, objects, light, textures));
             }
         }
 
         pixels
     }
 
-    fn trace_primary(&self, ray: &Ray, objects: &[Box<dyn Object>], light: &Light) -> Vec3 {
+    fn trace_primary(
+        &self,
+        ray: &Ray,
+        objects: &[Box<dyn Object>],
+        light: &Light,
+        textures: &TextureSet,
+    ) -> Vec3 {
         let Some(hit) = closest_hit(ray, objects, 0.001, f32::INFINITY) else {
             let sky_factor = 0.5 * (ray.direction.y + 1.0);
             return self.background * (1.0 - sky_factor) + Vec3::new(0.30, 0.39, 0.58) * sky_factor;
@@ -47,8 +59,12 @@ impl Renderer {
         let shadow_ray = Ray::new(shadow_origin, light_direction);
         let in_shadow = closest_hit(&shadow_ray, objects, 0.001, light_distance - 0.001).is_some();
 
+        let texture_color = textures.sample(hit.material, hit.uv);
+        let surface_albedo = texture_color * 0.82 + hit.material.albedo * 0.18;
+
         shade(
             hit.material,
+            surface_albedo,
             hit.normal,
             light_direction,
             -ray.direction,
