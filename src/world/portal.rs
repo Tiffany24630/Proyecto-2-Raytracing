@@ -7,13 +7,6 @@ pub enum PortalView {
 }
 
 impl PortalView {
-    pub fn toggled(self) -> Self {
-        match self {
-            Self::Exterior => Self::Interior,
-            Self::Interior => Self::Exterior,
-        }
-    }
-
     pub fn camera(self, aspect_ratio: f32) -> Camera {
         match self {
             Self::Exterior => Camera::orbital(
@@ -34,13 +27,6 @@ impl PortalView {
             ),
         }
     }
-
-    pub const fn label(self) -> &'static str {
-        match self {
-            Self::Exterior => "EXTERIOR",
-            Self::Interior => "TEMPLE",
-        }
-    }
 }
 
 #[cfg(test)]
@@ -50,11 +36,9 @@ mod tests {
     #[test]
     fn portal_changes_camera_side_and_can_return() {
         let exterior = PortalView::Exterior.camera(16.0 / 9.0);
-        let interior_state = PortalView::Exterior.toggled();
-        let interior = interior_state.camera(16.0 / 9.0);
+        let interior = PortalView::Interior.camera(16.0 / 9.0);
 
         assert!(exterior.position().z > 4.8);
         assert!(interior.position().z < 4.8);
-        assert_eq!(interior_state.toggled(), PortalView::Exterior);
     }
 }
