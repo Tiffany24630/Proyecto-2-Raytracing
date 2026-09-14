@@ -2,7 +2,14 @@ use std::{fs, io, path::Path};
 
 use crate::{geometry::Object, materials::TextureSet, math::Vec3};
 
-use super::{Camera, Light, Ray, closest_hit, lighting::shade};
+use super::{
+    Camera, Light, MAX_DEPTH, Ray, closest_hit,
+    lighting::shade,
+    reflection::reflect,
+    refraction::{refract, schlick_reflectance},
+};
+
+const MIN_RAY_WEIGHT: f32 = 0.01;
 
 pub struct Renderer {
     width: usize,
@@ -26,26 +33,45 @@ impl Renderer {
         light: &Light,
         textures: &TextureSet,
     ) -> Vec<Vec3> {
-        let mut pixels = Vec::with_capacity(self.width * self.height);
+        let worker_count = std::thread::available_parallelism()
+            .map_or(1, std::num::NonZeroUsize::get)
+            .min(self.height);
+        let rows_per_worker = self.height.div_ceil(worker_count);
 
-        for y in 0..self.height {
-            let v = 1.0 - (y as f32 + 0.5) / self.height as f32;
-            for x in 0..self.width {
-                let u = (x as f32 + 0.5) / self.width as f32;
-                let ray = camera.ray(u, v);
-                pixels.push(self.trace_primary(&ray, objects, light, textures));
+        std::thread::scope(|scope| {
+            let mut workers = Vec::with_capacity(worker_count);
+            for first_row in (0..self.height).step_by(rows_per_worker) {
+                let last_row = (first_row + rows_per_worker).min(self.height);
+                workers.push(scope.spawn(move || {
+                    let mut rows = Vec::with_capacity((last_row - first_row) * self.width);
+                    for y in first_row..last_row {
+                        let v = 1.0 - (y as f32 + 0.5) / self.height as f32;
+                        for x in 0..self.width {
+                            let u = (x as f32 + 0.5) / self.width as f32;
+                            let ray = camera.ray(u, v);
+                            rows.push(self.trace_ray(&ray, objects, light, textures, 0, 1.0));
+                        }
+                    }
+                    rows
+                }));
             }
-        }
 
-        pixels
+            let mut pixels = Vec::with_capacity(self.width * self.height);
+            for worker in workers {
+                pixels.extend(worker.join().expect("render worker panicked"));
+            }
+            pixels
+        })
     }
 
-    fn trace_primary(
+    fn trace_ray(
         &self,
         ray: &Ray,
         objects: &[Box<dyn Object>],
         light: &Light,
         textures: &TextureSet,
+        depth: u32,
+        ray_weight: f32,
     ) -> Vec3 {
         let Some(hit) = closest_hit(ray, objects, 0.001, f32::INFINITY) else {
             let sky_factor = 0.5 * (ray.direction.y + 1.0);
@@ -60,9 +86,11 @@ impl Renderer {
         let in_shadow = closest_hit(&shadow_ray, objects, 0.001, light_distance - 0.001).is_some();
 
         let texture_color = textures.sample(hit.material, hit.uv);
-        let surface_albedo = texture_color * 0.82 + hit.material.albedo * 0.18;
+        let texture_weight = hit.material.texture_weight;
+        let surface_albedo =
+            texture_color * texture_weight + hit.material.albedo * (1.0 - texture_weight);
 
-        shade(
+        let local_color = shade(
             hit.material,
             surface_albedo,
             hit.normal,
@@ -70,7 +98,69 @@ impl Renderer {
             -ray.direction,
             light,
             in_shadow,
-        )
+        );
+
+        if depth >= MAX_DEPTH {
+            return local_color;
+        }
+
+        let transparency = hit.material.transparency;
+        let opacity = 1.0 - transparency;
+        let mut reflection_weight = opacity * hit.material.reflectivity;
+        let local_weight = opacity * (1.0 - hit.material.reflectivity);
+        let mut refraction_weight = 0.0;
+        let mut refracted_color = Vec3::default();
+
+        if transparency > 0.0 {
+            let (first_ior, second_ior) = if hit.front_face {
+                (1.0, hit.material.refractive_index)
+            } else {
+                (hit.material.refractive_index, 1.0)
+            };
+            let eta_ratio = first_ior / second_ior;
+            let cos_theta = (-ray.direction).dot(hit.normal).min(1.0);
+
+            if let Some(refracted_direction) = refract(ray.direction, hit.normal, eta_ratio) {
+                let fresnel = schlick_reflectance(cos_theta, first_ior, second_ior);
+                reflection_weight += transparency * fresnel;
+                refraction_weight = transparency * (1.0 - fresnel);
+
+                let refracted_origin = hit.point - hit.normal * 0.001;
+                let refracted_ray = Ray::new(refracted_origin, refracted_direction);
+                if ray_weight * refraction_weight >= MIN_RAY_WEIGHT {
+                    refracted_color = self.trace_ray(
+                        &refracted_ray,
+                        objects,
+                        light,
+                        textures,
+                        depth + 1,
+                        ray_weight * refraction_weight,
+                    );
+                }
+            } else {
+                reflection_weight += transparency;
+            }
+        }
+
+        let reflected_color = if ray_weight * reflection_weight >= MIN_RAY_WEIGHT {
+            let reflected_direction = reflect(ray.direction, hit.normal).normalized();
+            let reflected_origin = hit.point + hit.normal * 0.001;
+            let reflected_ray = Ray::new(reflected_origin, reflected_direction);
+            self.trace_ray(
+                &reflected_ray,
+                objects,
+                light,
+                textures,
+                depth + 1,
+                ray_weight * reflection_weight,
+            )
+        } else {
+            Vec3::default()
+        };
+
+        local_color * local_weight
+            + reflected_color * reflection_weight
+            + refracted_color * refraction_weight
     }
 
     pub fn write_bmp(&self, path: impl AsRef<Path>, pixels: &[Vec3]) -> io::Result<()> {
@@ -104,12 +194,7 @@ impl Renderer {
 
         for y in (0..self.height).rev() {
             for x in 0..self.width {
-                let color = pixels[y * self.width + x];
-                let gamma_corrected =
-                    Vec3::new(color.x.sqrt(), color.y.sqrt(), color.z.sqrt()).clamp(0.0, 0.999);
-                let red = (256.0 * gamma_corrected.x) as u8;
-                let green = (256.0 * gamma_corrected.y) as u8;
-                let blue = (256.0 * gamma_corrected.z) as u8;
+                let [red, green, blue] = color_to_rgb8(pixels[y * self.width + x]);
                 output.extend_from_slice(&[blue, green, red]);
             }
             output.extend(std::iter::repeat_n(0, row_padding));
@@ -117,4 +202,25 @@ impl Renderer {
 
         fs::write(path, output)
     }
+
+    pub fn to_u32_buffer(&self, pixels: &[Vec3]) -> Vec<u32> {
+        assert_eq!(pixels.len(), self.width * self.height);
+        pixels
+            .iter()
+            .map(|color| {
+                let [red, green, blue] = color_to_rgb8(*color);
+                u32::from(red) << 16 | u32::from(green) << 8 | u32::from(blue)
+            })
+            .collect()
+    }
+}
+
+fn color_to_rgb8(color: Vec3) -> [u8; 3] {
+    let gamma_corrected =
+        Vec3::new(color.x.sqrt(), color.y.sqrt(), color.z.sqrt()).clamp(0.0, 0.999);
+    [
+        (256.0 * gamma_corrected.x) as u8,
+        (256.0 * gamma_corrected.y) as u8,
+        (256.0 * gamma_corrected.z) as u8,
+    ]
 }
