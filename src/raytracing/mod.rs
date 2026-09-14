@@ -11,4 +11,4 @@ pub use intersection::{HitRecord, Uv, closest_hit};
 pub use lighting::Light;
 pub use ray::Ray;
 pub use reflection::MAX_DEPTH;
-pub use renderer::Renderer;
+pub use renderer::{Renderer, SkyGradient};

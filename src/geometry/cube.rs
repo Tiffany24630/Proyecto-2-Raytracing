@@ -1,6 +1,6 @@
 use crate::{
     materials::Material,
-    math::Vec3,
+    math::{Vec3, rotate_y},
     raytracing::{HitRecord, Ray, Uv},
 };
 
@@ -8,31 +8,51 @@ use super::Object;
 
 pub struct Cube {
     name: &'static str,
-    min: Vec3,
-    max: Vec3,
+    center: Vec3,
+    half_size: Vec3,
+    yaw: f32,
     material: Material,
 }
 
 impl Cube {
     pub fn from_center(name: &'static str, center: Vec3, size: Vec3, material: Material) -> Self {
+        Self::from_center_rotated(name, center, size, 0.0, material)
+    }
+
+    pub fn from_center_rotated(
+        name: &'static str,
+        center: Vec3,
+        size: Vec3,
+        yaw: f32,
+        material: Material,
+    ) -> Self {
         assert!(size.x > 0.0 && size.y > 0.0 && size.z > 0.0);
-        let half_size = size * 0.5;
         Self {
             name,
-            min: center - half_size,
-            max: center + half_size,
+            center,
+            half_size: size * 0.5,
+            yaw,
             material,
         }
     }
 
-    fn outward_normal(&self, point: Vec3) -> Vec3 {
+    fn local_outward_normal(&self, point: Vec3) -> Vec3 {
         let distances = [
-            ((point.x - self.min.x).abs(), Vec3::new(-1.0, 0.0, 0.0)),
-            ((point.x - self.max.x).abs(), Vec3::new(1.0, 0.0, 0.0)),
-            ((point.y - self.min.y).abs(), Vec3::new(0.0, -1.0, 0.0)),
-            ((point.y - self.max.y).abs(), Vec3::new(0.0, 1.0, 0.0)),
-            ((point.z - self.min.z).abs(), Vec3::new(0.0, 0.0, -1.0)),
-            ((point.z - self.max.z).abs(), Vec3::new(0.0, 0.0, 1.0)),
+            (
+                (point.x + self.half_size.x).abs(),
+                Vec3::new(-1.0, 0.0, 0.0),
+            ),
+            ((point.x - self.half_size.x).abs(), Vec3::new(1.0, 0.0, 0.0)),
+            (
+                (point.y + self.half_size.y).abs(),
+                Vec3::new(0.0, -1.0, 0.0),
+            ),
+            ((point.y - self.half_size.y).abs(), Vec3::new(0.0, 1.0, 0.0)),
+            (
+                (point.z + self.half_size.z).abs(),
+                Vec3::new(0.0, 0.0, -1.0),
+            ),
+            ((point.z - self.half_size.z).abs(), Vec3::new(0.0, 0.0, 1.0)),
         ];
 
         distances
@@ -43,21 +63,21 @@ impl Cube {
     }
 
     fn uv(&self, point: Vec3, normal: Vec3) -> Uv {
-        let size = self.max - self.min;
+        let size = self.half_size * 2.0;
         if normal.x.abs() > 0.5 {
             Uv::new(
-                (point.z - self.min.z) / size.z,
-                (point.y - self.min.y) / size.y,
+                (point.z + self.half_size.z) / size.z,
+                (point.y + self.half_size.y) / size.y,
             )
         } else if normal.y.abs() > 0.5 {
             Uv::new(
-                (point.x - self.min.x) / size.x,
-                (point.z - self.min.z) / size.z,
+                (point.x + self.half_size.x) / size.x,
+                (point.z + self.half_size.z) / size.z,
             )
         } else {
             Uv::new(
-                (point.x - self.min.x) / size.x,
-                (point.y - self.min.y) / size.y,
+                (point.x + self.half_size.x) / size.x,
+                (point.y + self.half_size.y) / size.y,
             )
         }
     }
@@ -69,14 +89,18 @@ impl Object for Cube {
     }
 
     fn hit(&self, ray: &Ray, t_min: f32, t_max: f32) -> Option<HitRecord> {
+        let local_ray = Ray::new(
+            rotate_y(ray.origin - self.center, -self.yaw),
+            rotate_y(ray.direction, -self.yaw),
+        );
         let mut near = f32::NEG_INFINITY;
         let mut far = f32::INFINITY;
 
         for axis in 0..3 {
-            let origin = ray.origin.component(axis);
-            let direction = ray.direction.component(axis);
-            let minimum = self.min.component(axis);
-            let maximum = self.max.component(axis);
+            let origin = local_ray.origin.component(axis);
+            let direction = local_ray.direction.component(axis);
+            let minimum = -self.half_size.component(axis);
+            let maximum = self.half_size.component(axis);
 
             if direction.abs() < 1e-8 {
                 if origin < minimum || origin > maximum {
@@ -107,14 +131,16 @@ impl Object for Cube {
             return None;
         }
         let point = ray.at(t);
-        let outward_normal = self.outward_normal(point);
+        let local_point = local_ray.at(t);
+        let local_normal = self.local_outward_normal(local_point);
+        let outward_normal = rotate_y(local_normal, self.yaw);
         Some(HitRecord::new(
             ray,
             point,
             outward_normal,
             t,
             self.material,
-            self.uv(point, outward_normal),
+            self.uv(local_point, local_normal),
             self.name,
         ))
     }
@@ -173,5 +199,21 @@ mod tests {
         assert!((hit.t - 1.0).abs() < 1e-6);
         assert!(!hit.front_face);
         assert_eq!(hit.normal, Vec3::new(0.0, 0.0, -1.0));
+    }
+
+    #[test]
+    fn ray_intersects_a_rotated_non_uniform_cube() {
+        let cube = Cube::from_center_rotated(
+            "rotated cube",
+            Vec3::new(0.0, 0.0, 0.0),
+            Vec3::new(1.0, 1.0, 4.0),
+            std::f32::consts::FRAC_PI_2,
+            stone(),
+        );
+        let ray = Ray::new(Vec3::new(3.0, 0.0, 0.0), Vec3::new(-1.0, 0.0, 0.0));
+        let hit = cube.hit(&ray, 0.001, f32::INFINITY).unwrap();
+
+        assert!((hit.t - 1.0).abs() < 1e-5);
+        assert!((hit.normal.x - 1.0).abs() < 1e-5);
     }
 }

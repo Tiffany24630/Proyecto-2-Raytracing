@@ -11,6 +11,38 @@ use super::{
 
 const MIN_RAY_WEIGHT: f32 = 0.01;
 
+#[derive(Clone, Copy, Debug)]
+pub struct SkyGradient {
+    pub horizon: Vec3,
+    pub zenith: Vec3,
+    pub star_color: Vec3,
+    pub star_intensity: f32,
+}
+
+impl SkyGradient {
+    pub const fn new(horizon: Vec3, zenith: Vec3) -> Self {
+        Self {
+            horizon,
+            zenith,
+            star_color: Vec3::new(0.0, 0.0, 0.0),
+            star_intensity: 0.0,
+        }
+    }
+
+    pub const fn with_stars(mut self, color: Vec3, intensity: f32) -> Self {
+        self.star_color = color;
+        self.star_intensity = intensity;
+        self
+    }
+}
+
+#[derive(Clone, Copy)]
+struct TraceContext {
+    sky: SkyGradient,
+    depth: u32,
+    ray_weight: f32,
+}
+
 pub struct Renderer {
     width: usize,
     height: usize,
@@ -33,6 +65,24 @@ impl Renderer {
         light: &Light,
         textures: &TextureSet,
     ) -> Vec<Vec3> {
+        self.render_with_sky(
+            camera,
+            objects,
+            light,
+            textures,
+            SkyGradient::new(self.background, Vec3::new(0.30, 0.39, 0.58))
+                .with_stars(Vec3::new(0.72, 0.86, 1.0), 0.85),
+        )
+    }
+
+    pub fn render_with_sky(
+        &self,
+        camera: &Camera,
+        objects: &[Box<dyn Object>],
+        light: &Light,
+        textures: &TextureSet,
+        sky: SkyGradient,
+    ) -> Vec<Vec3> {
         let worker_count = std::thread::available_parallelism()
             .map_or(1, std::num::NonZeroUsize::get)
             .min(self.height);
@@ -49,7 +99,17 @@ impl Renderer {
                         for x in 0..self.width {
                             let u = (x as f32 + 0.5) / self.width as f32;
                             let ray = camera.ray(u, v);
-                            rows.push(self.trace_ray(&ray, objects, light, textures, 0, 1.0));
+                            rows.push(self.trace_ray(
+                                &ray,
+                                objects,
+                                light,
+                                textures,
+                                TraceContext {
+                                    sky,
+                                    depth: 0,
+                                    ray_weight: 1.0,
+                                },
+                            ));
                         }
                     }
                     rows
@@ -70,12 +130,14 @@ impl Renderer {
         objects: &[Box<dyn Object>],
         light: &Light,
         textures: &TextureSet,
-        depth: u32,
-        ray_weight: f32,
+        context: TraceContext,
     ) -> Vec3 {
         let Some(hit) = closest_hit(ray, objects, 0.001, f32::INFINITY) else {
             let sky_factor = 0.5 * (ray.direction.y + 1.0);
-            return self.background * (1.0 - sky_factor) + Vec3::new(0.30, 0.39, 0.58) * sky_factor;
+            let gradient =
+                context.sky.horizon * (1.0 - sky_factor) + context.sky.zenith * sky_factor;
+            let stars = procedural_star(ray.direction) * context.sky.star_intensity;
+            return gradient + context.sky.star_color * stars;
         };
 
         let to_light = light.position - hit.point;
@@ -100,7 +162,7 @@ impl Renderer {
             in_shadow,
         );
 
-        if depth >= MAX_DEPTH {
+        if context.depth >= MAX_DEPTH {
             return local_color;
         }
 
@@ -127,14 +189,17 @@ impl Renderer {
 
                 let refracted_origin = hit.point - hit.normal * 0.001;
                 let refracted_ray = Ray::new(refracted_origin, refracted_direction);
-                if ray_weight * refraction_weight >= MIN_RAY_WEIGHT {
+                if context.ray_weight * refraction_weight >= MIN_RAY_WEIGHT {
                     refracted_color = self.trace_ray(
                         &refracted_ray,
                         objects,
                         light,
                         textures,
-                        depth + 1,
-                        ray_weight * refraction_weight,
+                        TraceContext {
+                            depth: context.depth + 1,
+                            ray_weight: context.ray_weight * refraction_weight,
+                            ..context
+                        },
                     );
                 }
             } else {
@@ -142,7 +207,7 @@ impl Renderer {
             }
         }
 
-        let reflected_color = if ray_weight * reflection_weight >= MIN_RAY_WEIGHT {
+        let reflected_color = if context.ray_weight * reflection_weight >= MIN_RAY_WEIGHT {
             let reflected_direction = reflect(ray.direction, hit.normal).normalized();
             let reflected_origin = hit.point + hit.normal * 0.001;
             let reflected_ray = Ray::new(reflected_origin, reflected_direction);
@@ -151,8 +216,11 @@ impl Renderer {
                 objects,
                 light,
                 textures,
-                depth + 1,
-                ray_weight * reflection_weight,
+                TraceContext {
+                    depth: context.depth + 1,
+                    ray_weight: context.ray_weight * reflection_weight,
+                    ..context
+                },
             )
         } else {
             Vec3::default()
@@ -212,6 +280,25 @@ impl Renderer {
                 u32::from(red) << 16 | u32::from(green) << 8 | u32::from(blue)
             })
             .collect()
+    }
+}
+
+fn procedural_star(direction: Vec3) -> f32 {
+    if direction.y < -0.18 {
+        return 0.0;
+    }
+
+    let cell_x = (direction.x * 260.0).floor() as i32;
+    let cell_y = (direction.y * 260.0).floor() as i32;
+    let cell_z = (direction.z * 260.0).floor() as i32;
+    let hash = (cell_x.wrapping_mul(73_856_093)
+        ^ cell_y.wrapping_mul(19_349_663)
+        ^ cell_z.wrapping_mul(83_492_791)) as u32;
+    let bucket = hash % 1024;
+    if bucket >= 1019 {
+        0.55 + (bucket - 1019) as f32 * 0.11
+    } else {
+        0.0
     }
 }
 

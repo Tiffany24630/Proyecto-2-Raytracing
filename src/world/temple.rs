@@ -2,14 +2,48 @@ use crate::{
     geometry::{Cube, Object, Plane},
     materials::{Material, crystal, ink, metal, stone, wood},
     math::Vec3,
-    raytracing::Light,
 };
 
 use super::Scene;
 use super::exhibitions::add_exhibitions;
 use super::exterior::add_exterior;
+use super::memory_core::{MemoryCorePose, MemoryCoreState, add_memory_core};
+use super::puzzle_pieces::{PuzzleLayout, add_puzzle_pieces};
+
+#[derive(Clone, Copy)]
+struct CorePlacement {
+    state: MemoryCoreState,
+    pose: MemoryCorePose,
+    selected: bool,
+}
 
 pub fn build_temple() -> Scene {
+    build_temple_with_memory(MemoryCoreState::Stable)
+}
+
+pub fn build_temple_with_memory(memory_state: MemoryCoreState) -> Scene {
+    build_temple_with_core(memory_state, MemoryCorePose::default(), false)
+}
+
+pub fn build_temple_with_core(
+    memory_state: MemoryCoreState,
+    core_pose: MemoryCorePose,
+    core_selected: bool,
+) -> Scene {
+    build_temple_interactive(
+        memory_state,
+        core_pose,
+        core_selected,
+        PuzzleLayout::initial(),
+    )
+}
+
+pub fn build_temple_interactive(
+    memory_state: MemoryCoreState,
+    core_pose: MemoryCorePose,
+    core_selected: bool,
+    puzzle: PuzzleLayout,
+) -> Scene {
     let stone = stone();
     let wood = wood();
     let metal = metal();
@@ -42,11 +76,23 @@ pub fn build_temple() -> Scene {
     add_platforms(&mut objects, stone, wood);
     add_exhibitions(&mut objects);
     add_portal(&mut objects, stone, metal, crystal);
-    add_memory_pedestal(&mut objects, stone, metal, crystal, ink);
+    add_puzzle_pieces(&mut objects, puzzle);
+    add_memory_pedestal(
+        &mut objects,
+        stone,
+        metal,
+        crystal,
+        ink,
+        CorePlacement {
+            state: memory_state,
+            pose: core_pose,
+            selected: core_selected,
+        },
+    );
 
     Scene {
         objects,
-        light: Light::new(Vec3::new(-4.0, 7.5, 4.5), Vec3::new(1.0, 0.91, 0.78), 1.35),
+        light: memory_state.light(),
         camera_target: Vec3::new(0.0, 1.0, -0.25),
     }
 }
@@ -199,6 +245,7 @@ fn add_memory_pedestal(
     metal: Material,
     crystal: Material,
     ink: Material,
+    core: CorePlacement,
 ) {
     add_cube(
         objects,
@@ -214,13 +261,7 @@ fn add_memory_pedestal(
         Vec3::new(1.82, 0.34, 1.82),
         metal,
     );
-    add_cube(
-        objects,
-        "memory core",
-        Vec3::new(0.0, 1.25, -1.25),
-        Vec3::new(0.92, 0.92, 0.92),
-        crystal,
-    );
+    add_memory_core(objects, core.state, crystal, ink, core.pose, core.selected);
 
     for x in [-0.78, 0.78] {
         for z in [-2.03, -0.47] {
@@ -251,7 +292,8 @@ fn add_memory_pedestal(
 
 #[cfg(test)]
 mod tests {
-    use super::build_temple;
+    use super::{build_temple, build_temple_with_memory};
+    use crate::world::MemoryCoreState;
 
     #[test]
     fn temple_contains_every_required_architectural_group() {
@@ -268,6 +310,9 @@ mod tests {
             "roof beam",
             "portal membrane",
             "memory core",
+            "puzzle piece A",
+            "puzzle piece B",
+            "puzzle piece C",
             "exterior path",
             "exterior ruin pillar",
             "exterior rock",
@@ -279,5 +324,24 @@ mod tests {
             assert!(names.contains(&required), "missing '{required}'");
         }
         assert!((85..=105).contains(&temple.objects.len()));
+    }
+
+    #[test]
+    fn every_memory_state_builds_its_distinct_geometry() {
+        for (state, required) in [
+            (MemoryCoreState::Stable, "memory particle"),
+            (MemoryCoreState::Fragmented, "memory core fragment"),
+            (MemoryCoreState::Restored, "restored memory halo"),
+        ] {
+            let temple = build_temple_with_memory(state);
+            assert!(
+                temple
+                    .objects
+                    .iter()
+                    .any(|object| object.name() == required),
+                "{} state is missing '{required}'",
+                state.label()
+            );
+        }
     }
 }
