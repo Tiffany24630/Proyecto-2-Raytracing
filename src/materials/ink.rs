@@ -12,5 +12,6 @@ pub const fn ink() -> Material {
         refractive_index: 1.2,
         emission: Vec3::new(0.30, 0.015, 0.48),
         texture_scale: 1.1,
+        texture_weight: 0.82,
     }
 }

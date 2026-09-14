@@ -19,6 +19,7 @@ pub struct Material {
     pub refractive_index: f32,
     pub emission: Vec3,
     pub texture_scale: f32,
+    pub texture_weight: f32,
 }
 
 impl Material {
@@ -28,6 +29,7 @@ impl Material {
         assert!((0.0..=1.0).contains(&self.transparency));
         assert!(self.refractive_index >= 1.0);
         assert!(self.texture_scale > 0.0);
+        assert!((0.0..=1.0).contains(&self.texture_weight));
     }
 }
 

@@ -12,5 +12,6 @@ pub const fn metal() -> Material {
         refractive_index: 1.0,
         emission: Vec3::new(0.0, 0.0, 0.0),
         texture_scale: 2.2,
+        texture_weight: 0.82,
     }
 }
