@@ -31,12 +31,12 @@ impl MemoryCoreState {
 
     pub const fn light(self) -> Light {
         match self {
-            Self::Stable => Light::new(Vec3::new(-4.0, 7.5, 4.5), Vec3::new(1.0, 0.91, 0.78), 1.35),
+            Self::Stable => Light::new(Vec3::new(-5.5, 9.5, 5.5), Vec3::new(1.0, 0.94, 0.82), 1.55),
             Self::Fragmented => {
-                Light::new(Vec3::new(-2.5, 6.0, 2.0), Vec3::new(0.82, 0.48, 0.72), 1.05)
+                Light::new(Vec3::new(-3.5, 8.0, 3.0), Vec3::new(0.74, 0.52, 0.90), 1.28)
             }
             Self::Restored => {
-                Light::new(Vec3::new(-3.0, 7.8, 3.5), Vec3::new(0.72, 0.92, 1.0), 1.60)
+                Light::new(Vec3::new(-4.0, 9.8, 4.5), Vec3::new(0.76, 0.94, 1.0), 1.78)
             }
         }
     }

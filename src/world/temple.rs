@@ -65,10 +65,11 @@ pub fn build_temple_interactive(
     add_cube(
         &mut objects,
         "temple floor",
-        Vec3::new(0.0, -0.80, 0.0),
-        Vec3::new(10.0, 0.35, 11.0),
+        Vec3::new(0.0, -0.80, -1.50),
+        Vec3::new(22.0, 0.35, 23.0),
         stone,
     );
+    add_floor_inlays(&mut objects, metal, crystal);
     add_stairs(&mut objects, stone);
     add_walls(&mut objects, stone);
     add_columns(&mut objects, stone, metal);
@@ -108,60 +109,69 @@ fn add_cube(
 }
 
 fn add_stairs(objects: &mut Vec<Box<dyn Object>>, stone: Material) {
-    for step in 0..6 {
+    for step in 0..7 {
         add_cube(
             objects,
             "temple stair",
-            Vec3::new(0.0, -0.95 + step as f32 * 0.06, 7.15 - step as f32 * 0.36),
-            Vec3::new(3.6, 0.14, 0.52),
+            Vec3::new(0.0, -0.98 + step as f32 * 0.055, 10.75 - step as f32 * 0.34),
+            Vec3::new(4.8, 0.14, 0.52),
             stone,
         );
     }
 }
 
 fn add_walls(objects: &mut Vec<Box<dyn Object>>, stone: Material) {
-    for x in [-5.0, 5.0] {
-        add_cube(
-            objects,
-            "side wall",
-            Vec3::new(x, -0.05, -1.3),
-            Vec3::new(0.35, 1.30, 7.2),
-            stone,
-        );
+    for x in [-10.82, 10.82] {
+        for z in [-9.3, -3.5, 2.3, 7.2] {
+            add_cube(
+                objects,
+                "side wall",
+                Vec3::new(x, 1.85, z),
+                Vec3::new(0.36, 5.25, 4.3),
+                stone,
+            );
+        }
     }
-    for x in [-3.45, 3.45] {
+    for x in [-7.8, -2.6, 2.6, 7.8] {
         add_cube(
             objects,
             "rear wall",
-            Vec3::new(x, 1.0, -5.0),
-            Vec3::new(3.1, 3.4, 0.35),
+            Vec3::new(x, 1.85, -12.82),
+            Vec3::new(4.6, 5.25, 0.36),
             stone,
         );
     }
 }
 
 fn add_columns(objects: &mut Vec<Box<dyn Object>>, stone: Material, metal: Material) {
-    for x in [-4.0, 4.0] {
-        for z in [-3.75, 3.35] {
+    for x in [-8.3, 8.3] {
+        for z in [-10.2, -6.0, -1.8, 2.4, 6.6] {
             add_cube(
                 objects,
                 "column base",
-                Vec3::new(x, -0.48, z),
-                Vec3::new(1.15, 0.55, 1.15),
+                Vec3::new(x, -0.44, z),
+                Vec3::new(1.45, 0.68, 1.45),
                 stone,
             );
             add_cube(
                 objects,
                 "column shaft",
-                Vec3::new(x, 1.45, z),
-                Vec3::new(0.65, 3.35, 0.65),
+                Vec3::new(x, 2.18, z),
+                Vec3::new(0.72, 4.65, 0.72),
                 stone,
             );
             add_cube(
                 objects,
+                "column golden collar",
+                Vec3::new(x, 0.22, z),
+                Vec3::new(0.98, 0.24, 0.98),
+                metal,
+            );
+            add_cube(
+                objects,
                 "column capital",
-                Vec3::new(x, 3.30, z),
-                Vec3::new(1.20, 0.38, 1.20),
+                Vec3::new(x, 4.66, z),
+                Vec3::new(1.55, 0.44, 1.55),
                 metal,
             );
         }
@@ -169,41 +179,65 @@ fn add_columns(objects: &mut Vec<Box<dyn Object>>, stone: Material, metal: Mater
 }
 
 fn add_roof(objects: &mut Vec<Box<dyn Object>>, stone: Material, wood: Material) {
-    for z in [-4.15, 0.0, 4.15] {
+    for z in [-11.0, -6.6, -2.2, 2.2, 6.6] {
         add_cube(
             objects,
             "roof beam",
-            Vec3::new(0.0, 4.05, z),
-            Vec3::new(10.4, 0.38, 0.48),
+            Vec3::new(0.0, 5.25, z),
+            Vec3::new(21.5, 0.36, 0.52),
             stone,
         );
     }
-    for x in [-4.65, 0.0, 4.65] {
+    for x in [-8.4, 0.0, 8.4] {
         add_cube(
             objects,
             "roof rafter",
-            Vec3::new(x, 4.24, 0.0),
-            Vec3::new(0.42, 0.28, 8.7),
+            Vec3::new(x, 5.45, -2.2),
+            Vec3::new(0.42, 0.26, 18.6),
             wood,
         );
     }
 }
 
 fn add_platforms(objects: &mut Vec<Box<dyn Object>>, stone: Material, wood: Material) {
-    for x in [-3.0, 3.0] {
+    for (x, z) in [(-6.2, -4.1), (6.2, -4.1), (-6.2, 3.8)] {
         add_cube(
             objects,
             "exhibition platform",
-            Vec3::new(x, -0.46, -0.45),
-            Vec3::new(2.55, 0.52, 2.85),
+            Vec3::new(x, -0.43, z),
+            Vec3::new(4.5, 0.58, 4.15),
             stone,
         );
         add_cube(
             objects,
             "exhibition table",
-            Vec3::new(x, 0.05, -0.45),
-            Vec3::new(1.75, 0.50, 1.65),
+            Vec3::new(x, 0.02, z),
+            Vec3::new(3.25, 0.32, 2.65),
             wood,
+        );
+    }
+}
+
+fn add_floor_inlays(objects: &mut Vec<Box<dyn Object>>, metal: Material, mut crystal: Material) {
+    crystal.transparency = 0.42;
+    crystal.reflectivity = 0.08;
+    crystal.emission = Vec3::new(0.035, 0.10, 0.16);
+    for z in [-10.8, -8.0, -5.2, -2.4, 0.4, 3.2, 6.0] {
+        add_cube(
+            objects,
+            "celestial floor seal",
+            Vec3::new(0.0, -0.605, z),
+            Vec3::new(4.8, 0.04, 1.55),
+            crystal,
+        );
+    }
+    for x in [-2.65, 2.65] {
+        add_cube(
+            objects,
+            "golden aisle inlay",
+            Vec3::new(x, -0.57, -1.9),
+            Vec3::new(0.12, 0.05, 19.5),
+            metal,
         );
     }
 }
@@ -218,23 +252,23 @@ fn add_portal(
         add_cube(
             objects,
             "portal pillar",
-            Vec3::new(x, 1.20, 4.80),
-            Vec3::new(0.48, 4.05, 0.70),
+            Vec3::new(x, 1.55, 8.65),
+            Vec3::new(0.56, 4.75, 0.78),
             stone,
         );
     }
     add_cube(
         objects,
         "portal lintel",
-        Vec3::new(0.0, 3.20, 4.80),
-        Vec3::new(4.28, 0.48, 0.70),
+        Vec3::new(0.0, 3.93, 8.65),
+        Vec3::new(4.72, 0.52, 0.78),
         metal,
     );
     add_cube(
         objects,
         "portal membrane",
-        Vec3::new(0.0, 1.17, 4.78),
-        Vec3::new(3.30, 3.35, 0.16),
+        Vec3::new(0.0, 1.54, 8.61),
+        Vec3::new(3.55, 4.18, 0.18),
         crystal,
     );
 }
@@ -251,25 +285,25 @@ fn add_memory_pedestal(
         objects,
         "pedestal base",
         Vec3::new(0.0, -0.38, -1.25),
-        Vec3::new(2.55, 0.65, 2.55),
+        Vec3::new(3.4, 0.65, 3.4),
         stone,
     );
     add_cube(
         objects,
         "pedestal tier",
         Vec3::new(0.0, 0.02, -1.25),
-        Vec3::new(1.82, 0.34, 1.82),
+        Vec3::new(2.35, 0.34, 2.35),
         metal,
     );
     add_memory_core(objects, core.state, crystal, ink, core.pose, core.selected);
 
-    for x in [-0.78, 0.78] {
-        for z in [-2.03, -0.47] {
+    for x in [-1.10, 1.10] {
+        for z in [-2.35, -0.15] {
             add_cube(
                 objects,
                 "memory cage",
                 Vec3::new(x, 1.35, z),
-                Vec3::new(0.16, 3.10, 0.16),
+                Vec3::new(0.14, 3.65, 0.14),
                 metal,
             );
         }
@@ -277,16 +311,20 @@ fn add_memory_pedestal(
     add_cube(
         objects,
         "memory cage crown",
-        Vec3::new(0.0, 2.90, -1.25),
-        Vec3::new(1.75, 0.18, 1.75),
+        Vec3::new(0.0, 3.18, -1.25),
+        Vec3::new(2.42, 0.18, 2.42),
         metal,
     );
+    let mut preserved_echo = crystal;
+    preserved_echo.reflectivity = 0.08;
+    preserved_echo.transparency = 0.48;
+    preserved_echo.emission = Vec3::new(0.03, 0.10, 0.16);
     add_cube(
         objects,
         "preserved echo",
-        Vec3::new(0.0, 0.55, -3.35),
-        Vec3::new(0.72, 1.38, 0.72),
-        ink,
+        Vec3::new(0.0, 0.55, -5.05),
+        Vec3::new(0.72, 1.58, 0.72),
+        preserved_echo,
     );
 }
 
@@ -323,7 +361,7 @@ mod tests {
         ] {
             assert!(names.contains(&required), "missing '{required}'");
         }
-        assert!((85..=105).contains(&temple.objects.len()));
+        assert!((125..=170).contains(&temple.objects.len()));
     }
 
     #[test]

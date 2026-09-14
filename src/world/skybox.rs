@@ -15,13 +15,13 @@ pub fn temple_skybox(corruption: f32) -> SkyGradient {
 }
 
 const fn normal_skybox() -> SkyGradient {
-    SkyGradient::new(Vec3::new(0.10, 0.12, 0.18), Vec3::new(0.30, 0.39, 0.58))
-        .with_stars(Vec3::new(0.72, 0.86, 1.0), 0.85)
+    SkyGradient::new(Vec3::new(0.48, 0.58, 0.76), Vec3::new(0.12, 0.22, 0.48))
+        .with_stars(Vec3::new(0.88, 0.94, 1.0), 1.0)
 }
 
 const fn melanta_skybox() -> SkyGradient {
-    SkyGradient::new(Vec3::new(0.16, 0.005, 0.012), Vec3::new(0.58, 0.025, 0.035))
-        .with_stars(Vec3::new(1.0, 0.14, 0.08), 0.62)
+    SkyGradient::new(Vec3::new(0.22, 0.006, 0.014), Vec3::new(0.68, 0.018, 0.030))
+        .with_stars(Vec3::new(1.0, 0.20, 0.10), 0.72)
 }
 
 fn lerp(start: f32, end: f32, t: f32) -> f32 {

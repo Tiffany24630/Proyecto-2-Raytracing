@@ -10,19 +10,19 @@ impl PortalView {
     pub fn camera(self, aspect_ratio: f32) -> Camera {
         match self {
             Self::Exterior => Camera::orbital(
-                Vec3::new(0.0, 1.0, 4.8),
-                13.0,
+                Vec3::new(0.0, 1.35, 8.65),
+                9.5,
                 0.0,
-                12.0_f32.to_radians(),
-                48.0,
+                10.0_f32.to_radians(),
+                50.0,
                 aspect_ratio,
             ),
             Self::Interior => Camera::orbital(
                 Vec3::new(0.0, 1.0, -1.25),
-                5.0,
+                8.1,
                 0.0,
-                10.0_f32.to_radians(),
-                48.0,
+                9.0_f32.to_radians(),
+                50.0,
                 aspect_ratio,
             ),
         }
@@ -38,7 +38,21 @@ mod tests {
         let exterior = PortalView::Exterior.camera(16.0 / 9.0);
         let interior = PortalView::Interior.camera(16.0 / 9.0);
 
-        assert!(exterior.position().z > 4.8);
-        assert!(interior.position().z < 4.8);
+        assert!(exterior.position().z > 8.65);
+        assert!(interior.position().z < 8.65);
+    }
+
+    #[test]
+    fn interior_orbit_stays_inside_the_enlarged_hall() {
+        let mut camera = PortalView::Interior.camera(16.0 / 9.0);
+        camera.zoom(100.0);
+        assert!((camera.radius() - 9.5).abs() < f32::EPSILON);
+
+        for _ in 0..48 {
+            let position = camera.position();
+            assert!(position.x.abs() < 10.4);
+            assert!(position.z > -12.4 && position.z < 8.4);
+            camera.orbit(7.5_f32.to_radians(), 0.0);
+        }
     }
 }
