@@ -9,7 +9,8 @@ use super::{
     refraction::{refract, schlick_reflectance},
 };
 
-const MIN_RAY_WEIGHT: f32 = 0.01;
+const MIN_RAY_WEIGHT: f32 = 0.05;
+const MAX_RENDER_WORKERS: usize = 14;
 
 #[derive(Clone, Copy, Debug)]
 pub struct SkyGradient {
@@ -47,14 +48,20 @@ pub struct Renderer {
     width: usize,
     height: usize,
     background: Vec3,
+    worker_count: usize,
 }
 
 impl Renderer {
-    pub const fn new(width: usize, height: usize, background: Vec3) -> Self {
+    pub fn new(width: usize, height: usize, background: Vec3) -> Self {
+        let worker_count = std::thread::available_parallelism()
+            .map_or(1, std::num::NonZeroUsize::get)
+            .min(MAX_RENDER_WORKERS)
+            .min(height);
         Self {
             width,
             height,
             background,
+            worker_count,
         }
     }
 
@@ -83,13 +90,10 @@ impl Renderer {
         textures: &TextureSet,
         sky: SkyGradient,
     ) -> Vec<Vec3> {
-        let worker_count = std::thread::available_parallelism()
-            .map_or(1, std::num::NonZeroUsize::get)
-            .min(self.height);
-        let rows_per_worker = self.height.div_ceil(worker_count);
+        let rows_per_worker = self.height.div_ceil(self.worker_count);
 
         std::thread::scope(|scope| {
-            let mut workers = Vec::with_capacity(worker_count);
+            let mut workers = Vec::with_capacity(self.worker_count);
             for first_row in (0..self.height).step_by(rows_per_worker) {
                 let last_row = (first_row + rows_per_worker).min(self.height);
                 workers.push(scope.spawn(move || {
@@ -189,7 +193,7 @@ impl Renderer {
 
                 let refracted_origin = hit.point - hit.normal * 0.001;
                 let refracted_ray = Ray::new(refracted_origin, refracted_direction);
-                if context.ray_weight * refraction_weight >= MIN_RAY_WEIGHT {
+                if context.ray_weight * refraction_weight > MIN_RAY_WEIGHT {
                     refracted_color = self.trace_ray(
                         &refracted_ray,
                         objects,
@@ -207,7 +211,7 @@ impl Renderer {
             }
         }
 
-        let reflected_color = if context.ray_weight * reflection_weight >= MIN_RAY_WEIGHT {
+        let reflected_color = if context.ray_weight * reflection_weight > MIN_RAY_WEIGHT {
             let reflected_direction = reflect(ray.direction, hit.normal).normalized();
             let reflected_origin = hit.point + hit.normal * 0.001;
             let reflected_ray = Ray::new(reflected_origin, reflected_direction);
