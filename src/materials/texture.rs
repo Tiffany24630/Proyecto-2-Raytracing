@@ -67,7 +67,7 @@ impl TextureSet {
     pub fn load_from_directory(directory: impl AsRef<Path>) -> ImageResult<Self> {
         let directory = directory.as_ref();
         Ok(Self {
-            stone: Texture::load(directory.join("stone.png"))?,
+            stone: Texture::load(directory.join("stone_celestial.png"))?,
             wood: Texture::load(directory.join("wood.png"))?,
             metal: Texture::load(directory.join("metal.png"))?,
             crystal: Texture::load(directory.join("crystal.png"))?,

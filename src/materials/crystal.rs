@@ -10,7 +10,7 @@ pub const fn crystal() -> Material {
         reflectivity: 0.18,
         transparency: 0.88,
         refractive_index: 1.5,
-        emission: Vec3::new(0.025, 0.065, 0.105),
+        emission: Vec3::new(0.035, 0.10, 0.16),
         texture_scale: 1.10,
         texture_weight: 0.70,
     }
