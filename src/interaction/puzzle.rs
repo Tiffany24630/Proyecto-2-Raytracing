@@ -7,9 +7,9 @@ use crate::{
 
 use super::selection::puzzle_piece_at;
 
-pub const POSITION_TOLERANCE: f32 = 0.12;
-pub const ROTATION_TOLERANCE: f32 = 5.0_f32.to_radians();
-pub const CAMERA_TOLERANCE: f32 = 8.0_f32.to_radians();
+pub const POSITION_TOLERANCE: f32 = 0.16;
+pub const ROTATION_TOLERANCE: f32 = 8.0_f32.to_radians();
+pub const CAMERA_TOLERANCE: f32 = 12.0_f32.to_radians();
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PieceStatus {

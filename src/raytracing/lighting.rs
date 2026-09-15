@@ -26,7 +26,7 @@ pub fn shade(
     light: &Light,
     in_shadow: bool,
 ) -> Vec3 {
-    let ambient = surface_albedo * 0.12 + material.emission;
+    let ambient = surface_albedo * Vec3::new(0.075, 0.09, 0.13) + material.emission;
     if in_shadow {
         return ambient;
     }

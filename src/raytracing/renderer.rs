@@ -10,7 +10,7 @@ use super::{
 };
 
 const MIN_RAY_WEIGHT: f32 = 0.05;
-const MAX_RENDER_WORKERS: usize = 14;
+const MAX_RENDER_WORKERS: usize = 8;
 
 #[derive(Clone, Copy, Debug)]
 pub struct SkyGradient {
@@ -49,6 +49,7 @@ pub struct Renderer {
     height: usize,
     background: Vec3,
     worker_count: usize,
+    max_depth: u32,
 }
 
 impl Renderer {
@@ -62,7 +63,17 @@ impl Renderer {
             height,
             background,
             worker_count,
+            max_depth: MAX_DEPTH,
         }
+    }
+
+    pub const fn with_max_depth(mut self, max_depth: u32) -> Self {
+        self.max_depth = if max_depth < MAX_DEPTH {
+            max_depth
+        } else {
+            MAX_DEPTH
+        };
+        self
     }
 
     pub fn render(
@@ -77,8 +88,8 @@ impl Renderer {
             objects,
             light,
             textures,
-            SkyGradient::new(self.background, Vec3::new(0.30, 0.39, 0.58))
-                .with_stars(Vec3::new(0.72, 0.86, 1.0), 0.85),
+            SkyGradient::new(self.background, Vec3::new(0.035, 0.07, 0.20))
+                .with_stars(Vec3::new(0.68, 0.88, 1.0), 1.08),
         )
     }
 
@@ -103,7 +114,7 @@ impl Renderer {
                         for x in 0..self.width {
                             let u = (x as f32 + 0.5) / self.width as f32;
                             let ray = camera.ray(u, v);
-                            rows.push(self.trace_ray(
+                            let linear_color = self.trace_ray(
                                 &ray,
                                 objects,
                                 light,
@@ -113,7 +124,8 @@ impl Renderer {
                                     depth: 0,
                                     ray_weight: 1.0,
                                 },
-                            ));
+                            );
+                            rows.push(tone_map(linear_color));
                         }
                     }
                     rows
@@ -151,7 +163,7 @@ impl Renderer {
         let shadow_ray = Ray::new(shadow_origin, light_direction);
         let in_shadow = closest_hit(&shadow_ray, objects, 0.001, light_distance - 0.001).is_some();
 
-        let texture_color = textures.sample(hit.material, hit.uv);
+        let texture_color = textures.sample(hit.material, hit.uv, hit.object_name);
         let texture_weight = hit.material.texture_weight;
         let surface_albedo =
             texture_color * texture_weight + hit.material.albedo * (1.0 - texture_weight);
@@ -166,7 +178,7 @@ impl Renderer {
             in_shadow,
         );
 
-        if context.depth >= MAX_DEPTH {
+        if context.depth >= self.max_depth {
             return local_color;
         }
 
@@ -287,6 +299,15 @@ impl Renderer {
     }
 }
 
+fn tone_map(color: Vec3) -> Vec3 {
+    let color = color.clamp(0.0, f32::MAX);
+    Vec3::new(
+        color.x / (1.0 + color.x),
+        color.y / (1.0 + color.y),
+        color.z / (1.0 + color.z),
+    )
+}
+
 fn procedural_star(direction: Vec3) -> f32 {
     if direction.y < -0.18 {
         return 0.0;
@@ -314,4 +335,37 @@ fn color_to_rgb8(color: Vec3) -> [u8; 3] {
         (256.0 * gamma_corrected.y) as u8,
         (256.0 * gamma_corrected.z) as u8,
     ]
+}
+
+#[cfg(test)]
+mod tone_mapping_tests {
+    use super::{MAX_DEPTH, MAX_RENDER_WORKERS, Renderer, tone_map};
+    use crate::math::Vec3;
+
+    #[test]
+    fn tone_mapping_preserves_color_order_without_clipping_highlights() {
+        let mapped = tone_map(Vec3::new(0.5, 2.0, 8.0));
+        assert!(mapped.x < mapped.y && mapped.y < mapped.z);
+        assert!(mapped.x >= 0.0 && mapped.z < 1.0);
+    }
+
+    #[test]
+    fn renderer_uses_a_bounded_worker_pool() {
+        let renderer = Renderer::new(480, 270, Vec3::default());
+        assert!((1..=MAX_RENDER_WORKERS).contains(&renderer.worker_count));
+        assert_eq!(MAX_RENDER_WORKERS, 8);
+        assert_eq!(renderer.max_depth, MAX_DEPTH);
+        assert_eq!(
+            Renderer::new(480, 270, Vec3::default())
+                .with_max_depth(1)
+                .max_depth,
+            1
+        );
+        assert_eq!(
+            Renderer::new(480, 270, Vec3::default())
+                .with_max_depth(MAX_DEPTH + 1)
+                .max_depth,
+            MAX_DEPTH
+        );
+    }
 }

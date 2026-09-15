@@ -2,7 +2,7 @@ use crate::{raytracing::Camera, world::MEMORY_CORE_CENTER};
 
 use super::puzzle::{CAMERA_TOLERANCE, Puzzle};
 
-pub const CAMERA_POSITION_TOLERANCE: f32 = 0.40;
+pub const CAMERA_POSITION_TOLERANCE: f32 = 0.75;
 pub const TARGET_RADIUS: f32 = 7.3;
 pub const TARGET_YAW: f32 = 15.0_f32.to_radians();
 pub const TARGET_PITCH: f32 = 9.0_f32.to_radians();
@@ -234,7 +234,7 @@ mod tests {
         let mut camera = Camera::orbital(
             Vec3::new(0.0, 1.0, -1.25),
             7.3,
-            10.0_f32.to_radians(),
+            8.0_f32.to_radians(),
             9.0_f32.to_radians(),
             50.0,
             ASPECT_RATIO,
