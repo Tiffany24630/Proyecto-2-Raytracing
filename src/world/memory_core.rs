@@ -61,16 +61,23 @@ pub(super) fn add_memory_core(
 }
 
 fn add_stable_core(objects: &mut Vec<Box<dyn Object>>, crystal: Material, pose: MemoryCorePose) {
+    let mut shell = crystal;
+    shell.transparency = 0.70;
+    shell.reflectivity = 0.22;
+    shell.emission = Vec3::new(0.045, 0.12, 0.19);
+    shell.texture_weight = 0.55;
     add_rotated_cube(
         objects,
         "memory core",
         transformed_center(Vec3::default(), pose),
-        Vec3::new(0.82, 1.02, 0.92),
-        pose.yaw,
-        crystal,
+        Vec3::new(1.02, 1.36, 1.08),
+        pose.yaw + std::f32::consts::FRAC_PI_4,
+        shell,
     );
 
-    let mote = particle_material(crystal);
+    add_core_focus(objects, crystal, pose, false);
+
+    let mote = particle_material(shell);
     for offset in [
         Vec3::new(-0.58, 0.52, 0.05),
         Vec3::new(0.58, -0.36, 0.08),
@@ -89,10 +96,13 @@ fn add_stable_core(objects: &mut Vec<Box<dyn Object>>, crystal: Material, pose: 
 
 fn add_fragmented_core(
     objects: &mut Vec<Box<dyn Object>>,
-    crystal: Material,
+    mut crystal: Material,
     mut ink: Material,
     pose: MemoryCorePose,
 ) {
+    crystal.transparency = 0.68;
+    crystal.reflectivity = 0.20;
+    crystal.emission = Vec3::new(0.04, 0.08, 0.17);
     for (index, offset, size) in [
         (
             0,
@@ -142,36 +152,68 @@ fn add_restored_core(
     mut crystal: Material,
     pose: MemoryCorePose,
 ) {
-    crystal.emission = Vec3::new(0.08, 0.22, 0.32);
-    crystal.reflectivity = 0.24;
+    crystal.emission = Vec3::new(0.10, 0.30, 0.42);
+    crystal.reflectivity = 0.26;
+    crystal.transparency = 0.60;
+    crystal.texture_weight = 0.58;
     add_rotated_cube(
         objects,
         "memory core",
         transformed_center(Vec3::default(), pose),
-        Vec3::new(0.98, 1.16, 1.08),
-        pose.yaw,
+        Vec3::new(1.15, 1.48, 1.20),
+        pose.yaw + std::f32::consts::FRAC_PI_4,
         crystal,
     );
 
+    add_core_focus(objects, crystal, pose, true);
+
     let halo = particle_material(crystal);
     for offset in [
-        Vec3::new(-0.78, 0.00, 0.0),
-        Vec3::new(0.78, 0.00, 0.0),
-        Vec3::new(0.00, -0.78, 0.0),
-        Vec3::new(0.00, 0.78, 0.0),
-        Vec3::new(-0.55, -0.55, 0.06),
-        Vec3::new(0.55, -0.55, 0.06),
-        Vec3::new(-0.55, 0.55, -0.06),
-        Vec3::new(0.55, 0.55, -0.06),
+        Vec3::new(-0.92, 0.00, 0.0),
+        Vec3::new(0.92, 0.00, 0.0),
+        Vec3::new(0.00, -0.92, 0.0),
+        Vec3::new(0.00, 0.92, 0.0),
+        Vec3::new(-0.65, -0.65, 0.06),
+        Vec3::new(0.65, -0.65, 0.06),
+        Vec3::new(-0.65, 0.65, -0.06),
+        Vec3::new(0.65, 0.65, -0.06),
     ] {
         add_cube(
             objects,
             "restored memory halo",
             transformed_center(offset, pose),
-            Vec3::new(0.12, 0.18, 0.12),
+            Vec3::new(0.14, 0.20, 0.14),
             halo,
         );
     }
+}
+
+fn add_core_focus(
+    objects: &mut Vec<Box<dyn Object>>,
+    mut crystal: Material,
+    pose: MemoryCorePose,
+    restored: bool,
+) {
+    crystal.reflectivity = 0.06;
+    crystal.transparency = 0.0;
+    crystal.emission = if restored {
+        Vec3::new(0.18, 0.52, 0.68)
+    } else {
+        Vec3::new(0.10, 0.30, 0.44)
+    };
+    crystal.texture_weight = 0.24;
+    add_rotated_cube(
+        objects,
+        "memory core focus",
+        transformed_center(Vec3::default(), pose),
+        if restored {
+            Vec3::new(0.48, 0.90, 0.52)
+        } else {
+            Vec3::new(0.38, 0.72, 0.42)
+        },
+        pose.yaw - std::f32::consts::FRAC_PI_4,
+        crystal,
+    );
 }
 
 fn add_selection_markers(

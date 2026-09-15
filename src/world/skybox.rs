@@ -15,8 +15,8 @@ pub fn temple_skybox(corruption: f32) -> SkyGradient {
 }
 
 const fn normal_skybox() -> SkyGradient {
-    SkyGradient::new(Vec3::new(0.48, 0.58, 0.76), Vec3::new(0.12, 0.22, 0.48))
-        .with_stars(Vec3::new(0.88, 0.94, 1.0), 1.0)
+    SkyGradient::new(Vec3::new(0.20, 0.31, 0.54), Vec3::new(0.035, 0.07, 0.20))
+        .with_stars(Vec3::new(0.68, 0.88, 1.0), 1.08)
 }
 
 const fn melanta_skybox() -> SkyGradient {

@@ -1,5 +1,5 @@
 use crate::{
-    geometry::{Cube, Object},
+    geometry::{Cube, Object, Plane},
     materials::{Material, crystal, metal, stone},
     math::Vec3,
 };
@@ -7,15 +7,50 @@ use crate::{
 pub(super) fn add_exterior(objects: &mut Vec<Box<dyn Object>>) {
     let stone = stone();
     let metal = metal();
+    let mut grass = stone;
+    grass.albedo = Vec3::new(0.22, 0.42, 0.16);
+    grass.specular = 0.06;
+    grass.reflectivity = 0.01;
+    grass.texture_scale = 0.22;
+    grass.texture_weight = 0.92;
+    let mut ruin_stone = stone;
+    ruin_stone.albedo = Vec3::new(0.52, 0.59, 0.64);
+    ruin_stone.texture_weight = 0.58;
+    let mut rock = stone;
+    rock.albedo = Vec3::new(0.30, 0.38, 0.43);
+    rock.specular = 0.10;
+    rock.reflectivity = 0.02;
+    rock.texture_scale = 0.72;
+    rock.texture_weight = 0.42;
     let mut wind = crystal();
     wind.reflectivity = 0.05;
-    wind.transparency = 0.24;
-    wind.texture_weight = 0.40;
+    wind.transparency = 0.18;
+    wind.emission = Vec3::new(0.06, 0.18, 0.24);
+    wind.texture_weight = 0.32;
 
+    add_grass_terrain(objects, grass);
     add_path(objects, stone);
-    add_ruins(objects, stone, metal);
-    add_rocks(objects, stone);
+    add_ruins(objects, ruin_stone, metal);
+    add_rocks(objects, rock);
     add_wind_fragments(objects, wind);
+}
+
+fn add_grass_terrain(objects: &mut Vec<Box<dyn Object>>, grass: Material) {
+    objects.push(Box::new(Plane::new(
+        "exterior grass",
+        Vec3::new(0.0, -1.0, 0.0),
+        Vec3::new(0.0, 1.0, 0.0),
+        grass,
+    )));
+    for x in [-4.45, 4.45] {
+        add_cube(
+            objects,
+            "exterior grass verge",
+            Vec3::new(x, -0.91, 13.4),
+            Vec3::new(4.55, 0.14, 7.2),
+            grass,
+        );
+    }
 }
 
 fn add_path(objects: &mut Vec<Box<dyn Object>>, stone: Material) {
@@ -32,10 +67,10 @@ fn add_path(objects: &mut Vec<Box<dyn Object>>, stone: Material) {
 
 fn add_ruins(objects: &mut Vec<Box<dyn Object>>, stone: Material, metal: Material) {
     for (x, z, height) in [
-        (-5.4, 11.0, 2.9),
-        (5.5, 11.8, 2.1),
-        (-6.2, 14.5, 1.8),
-        (6.0, 15.2, 2.6),
+        (-4.65, 11.2, 3.25),
+        (4.85, 11.8, 2.35),
+        (-5.25, 14.5, 1.95),
+        (5.10, 15.0, 2.85),
     ] {
         add_cube(
             objects,
@@ -53,37 +88,47 @@ fn add_ruins(objects: &mut Vec<Box<dyn Object>>, stone: Material, metal: Materia
         );
     }
 
-    for (x, z, y) in [(-5.4, 11.0, 2.15), (6.0, 15.2, 1.75)] {
+    for (x, z, y, size) in [
+        (-3.55, 11.2, 2.72, Vec3::new(2.65, 0.30, 0.62)),
+        (4.15, 15.0, 2.18, Vec3::new(2.25, 0.28, 0.58)),
+    ] {
         add_cube(
             objects,
-            "exterior ruin capital",
+            "exterior ruin lintel",
             Vec3::new(x, y, z),
-            Vec3::new(1.18, 0.30, 1.18),
+            size,
             metal,
         );
     }
 }
 
 fn add_rocks(objects: &mut Vec<Box<dyn Object>>, stone: Material) {
-    for (x, y, z, size) in [
-        (-3.4, -0.62, 12.2, Vec3::new(1.20, 0.82, 0.92)),
-        (3.7, -0.70, 13.7, Vec3::new(0.92, 0.64, 1.25)),
-        (-4.5, -0.73, 16.0, Vec3::new(0.78, 0.58, 0.74)),
-        (3.0, -0.68, 10.4, Vec3::new(0.92, 0.70, 0.80)),
-        (6.8, -0.74, 13.2, Vec3::new(0.72, 0.56, 0.92)),
+    for (x, y, z, size, yaw) in [
+        (-3.45, -0.42, 12.0, Vec3::new(1.80, 1.28, 1.35), 18.0_f32),
+        (3.65, -0.53, 13.3, Vec3::new(1.48, 1.02, 1.82), -24.0),
+        (-4.65, -0.54, 15.5, Vec3::new(1.28, 1.06, 1.05), 34.0),
+        (2.85, -0.50, 10.5, Vec3::new(1.42, 1.02, 1.18), 27.0),
+        (5.55, -0.55, 15.7, Vec3::new(1.32, 0.94, 1.60), -32.0),
     ] {
-        add_cube(objects, "exterior rock", Vec3::new(x, y, z), size, stone);
+        add_rotated_cube(
+            objects,
+            "exterior rock",
+            Vec3::new(x, y, z),
+            size,
+            yaw.to_radians(),
+            stone,
+        );
     }
 }
 
 fn add_wind_fragments(objects: &mut Vec<Box<dyn Object>>, wind: Material) {
     for (x, y, z, size) in [
-        (-2.4, 0.25, 11.3, 0.18),
-        (2.8, 1.10, 11.9, 0.15),
-        (-3.6, 1.75, 13.2, 0.22),
-        (2.1, 2.15, 14.0, 0.14),
-        (4.2, 0.55, 15.3, 0.19),
-        (-1.7, 1.30, 16.0, 0.16),
+        (-2.40, 0.35, 11.1, 0.20),
+        (2.55, 1.18, 11.8, 0.17),
+        (-3.25, 1.85, 13.0, 0.23),
+        (2.05, 2.30, 14.0, 0.16),
+        (3.85, 0.65, 15.1, 0.21),
+        (-1.55, 1.42, 16.0, 0.18),
     ] {
         add_cube(
             objects,
@@ -103,4 +148,17 @@ fn add_cube(
     material: Material,
 ) {
     objects.push(Box::new(Cube::from_center(name, center, size, material)));
+}
+
+fn add_rotated_cube(
+    objects: &mut Vec<Box<dyn Object>>,
+    name: &'static str,
+    center: Vec3,
+    size: Vec3,
+    yaw: f32,
+    material: Material,
+) {
+    objects.push(Box::new(Cube::from_center_rotated(
+        name, center, size, yaw, material,
+    )));
 }

@@ -1,5 +1,5 @@
 use crate::{
-    geometry::{Cube, Object, Plane},
+    geometry::{Cube, Object},
     materials::{Material, crystal, ink, metal, stone, wood},
     math::Vec3,
 };
@@ -54,12 +54,6 @@ pub fn build_temple_interactive(
     }
 
     let mut objects: Vec<Box<dyn Object>> = Vec::new();
-    objects.push(Box::new(Plane::new(
-        "exterior floor",
-        Vec3::new(0.0, -1.0, 0.0),
-        Vec3::new(0.0, 1.0, 0.0),
-        stone,
-    )));
     add_exterior(&mut objects);
 
     add_cube(
@@ -75,6 +69,7 @@ pub fn build_temple_interactive(
     add_columns(&mut objects, stone, metal);
     add_roof(&mut objects, stone, wood);
     add_platforms(&mut objects, stone, wood);
+    add_celestial_apse(&mut objects, stone, metal, crystal);
     add_exhibitions(&mut objects);
     add_portal(&mut objects, stone, metal, crystal);
     add_puzzle_pieces(&mut objects, puzzle);
@@ -218,6 +213,41 @@ fn add_platforms(objects: &mut Vec<Box<dyn Object>>, stone: Material, wood: Mate
     }
 }
 
+fn add_celestial_apse(
+    objects: &mut Vec<Box<dyn Object>>,
+    stone: Material,
+    metal: Material,
+    mut crystal: Material,
+) {
+    for x in [-2.65, 2.65] {
+        add_cube(
+            objects,
+            "central apse pillar",
+            Vec3::new(x, 1.78, -4.85),
+            Vec3::new(0.58, 5.05, 0.72),
+            stone,
+        );
+    }
+    add_cube(
+        objects,
+        "central apse crown",
+        Vec3::new(0.0, 4.30, -4.85),
+        Vec3::new(5.90, 0.48, 0.74),
+        metal,
+    );
+
+    crystal.transparency = 0.34;
+    crystal.reflectivity = 0.12;
+    crystal.emission = Vec3::new(0.05, 0.16, 0.24);
+    add_cube(
+        objects,
+        "celestial apse crest",
+        Vec3::new(0.0, 4.74, -4.80),
+        Vec3::new(0.72, 0.62, 0.30),
+        crystal,
+    );
+}
+
 fn add_floor_inlays(objects: &mut Vec<Box<dyn Object>>, metal: Material, mut crystal: Material) {
     crystal.transparency = 0.42;
     crystal.reflectivity = 0.08;
@@ -246,7 +276,7 @@ fn add_portal(
     objects: &mut Vec<Box<dyn Object>>,
     stone: Material,
     metal: Material,
-    crystal: Material,
+    mut crystal: Material,
 ) {
     for x in [-1.9, 1.9] {
         add_cube(
@@ -264,6 +294,17 @@ fn add_portal(
         Vec3::new(4.72, 0.52, 0.78),
         metal,
     );
+    add_cube(
+        objects,
+        "portal threshold",
+        Vec3::new(0.0, -0.51, 8.49),
+        Vec3::new(3.30, 0.14, 0.18),
+        metal,
+    );
+    crystal.transparency = 0.76;
+    crystal.reflectivity = 0.14;
+    crystal.emission = Vec3::new(0.055, 0.15, 0.23);
+    crystal.texture_weight = 0.58;
     add_cube(
         objects,
         "portal membrane",
@@ -295,15 +336,27 @@ fn add_memory_pedestal(
         Vec3::new(2.35, 0.34, 2.35),
         metal,
     );
+    let mut aperture = crystal;
+    aperture.transparency = 0.38;
+    aperture.reflectivity = 0.12;
+    aperture.emission = Vec3::new(0.05, 0.16, 0.23);
+    aperture.texture_weight = 0.44;
+    add_cube(
+        objects,
+        "core energy aperture",
+        Vec3::new(0.0, 0.25, -1.25),
+        Vec3::new(1.48, 0.10, 1.48),
+        aperture,
+    );
     add_memory_core(objects, core.state, crystal, ink, core.pose, core.selected);
 
-    for x in [-1.10, 1.10] {
-        for z in [-2.35, -0.15] {
+    for x in [-1.34, 1.34] {
+        for z in [-2.30, -0.20] {
             add_cube(
                 objects,
                 "memory cage",
                 Vec3::new(x, 1.35, z),
-                Vec3::new(0.14, 3.65, 0.14),
+                Vec3::new(0.12, 3.55, 0.12),
                 metal,
             );
         }
@@ -311,8 +364,8 @@ fn add_memory_pedestal(
     add_cube(
         objects,
         "memory cage crown",
-        Vec3::new(0.0, 3.18, -1.25),
-        Vec3::new(2.42, 0.18, 2.42),
+        Vec3::new(0.0, 3.15, -1.25),
+        Vec3::new(2.92, 0.16, 2.26),
         metal,
     );
     let mut preserved_echo = crystal;
@@ -322,8 +375,8 @@ fn add_memory_pedestal(
     add_cube(
         objects,
         "preserved echo",
-        Vec3::new(0.0, 0.55, -5.05),
-        Vec3::new(0.72, 1.58, 0.72),
+        Vec3::new(0.0, 1.60, -4.76),
+        Vec3::new(0.42, 1.25, 0.12),
         preserved_echo,
     );
 }
@@ -346,13 +399,20 @@ mod tests {
             "temple stair",
             "pedestal base",
             "roof beam",
+            "central apse pillar",
+            "central apse crown",
+            "celestial apse crest",
             "portal membrane",
+            "portal threshold",
             "memory core",
+            "memory core focus",
+            "core energy aperture",
             "puzzle piece A",
             "puzzle piece B",
             "puzzle piece C",
             "exterior path",
             "exterior ruin pillar",
+            "exterior ruin lintel",
             "exterior rock",
             "wind fragment",
             "luyang painting",
@@ -364,7 +424,7 @@ mod tests {
         ] {
             assert!(names.contains(&required), "missing '{required}'");
         }
-        assert!((125..=170).contains(&temple.objects.len()));
+        assert!((125..=175).contains(&temple.objects.len()));
     }
 
     #[test]

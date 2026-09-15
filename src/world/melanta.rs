@@ -5,35 +5,53 @@ use crate::{
     raytracing::Light,
 };
 
-const MELANTA_X: f32 = 3.55;
-const MELANTA_Z: f32 = -2.75;
+use super::memory_core::MemoryCoreState;
+
+const MELANTA_X: f32 = 0.0;
+const MELANTA_Z: f32 = -3.55;
 
 pub const fn melanta_light() -> Light {
     Light::new(Vec3::new(0.0, 7.2, 2.0), Vec3::new(1.0, 0.10, 0.07), 1.08)
 }
 
+pub fn melanta_transition_light(corruption: f32) -> Light {
+    let t = corruption.clamp(0.0, 1.0);
+    let restored = MemoryCoreState::Restored.light();
+    let corrupted = melanta_light();
+    Light::new(
+        restored.position + (corrupted.position - restored.position) * t,
+        restored.color + (corrupted.color - restored.color) * t,
+        restored.intensity + (corrupted.intensity - restored.intensity) * t,
+    )
+}
+
 pub fn add_melanta_event(objects: &mut Vec<Box<dyn Object>>) {
     let corruption = corrupted_ink();
+    let mut flare = corruption;
+    flare.albedo = Vec3::new(0.72, 0.015, 0.035);
+    flare.emission = Vec3::new(0.58, 0.012, 0.035);
+    flare.reflectivity = 0.08;
+    flare.texture_weight = 0.30;
 
     // A monumental abstract Watcher placed above the core so it reads immediately.
     add_cube(
         objects,
         "melanta torso",
-        Vec3::new(MELANTA_X, 2.65, MELANTA_Z),
-        Vec3::new(0.88, 3.05, 0.62),
+        Vec3::new(MELANTA_X, 2.10, MELANTA_Z),
+        Vec3::new(1.02, 2.70, 0.62),
         corruption,
     );
     add_cube(
         objects,
         "melanta head",
-        Vec3::new(MELANTA_X, 4.45, MELANTA_Z),
-        Vec3::new(0.72, 0.72, 0.72),
+        Vec3::new(MELANTA_X, 3.78, MELANTA_Z),
+        Vec3::new(0.82, 0.82, 0.72),
         corruption,
     );
     for (x, yaw) in [(-1.05, -0.34), (1.05, 0.34)] {
         objects.push(Box::new(Cube::from_center_rotated(
             "melanta arm",
-            Vec3::new(MELANTA_X + x, 3.18, MELANTA_Z + 0.05),
+            Vec3::new(MELANTA_X + x, 2.66, MELANTA_Z + 0.05),
             Vec3::new(1.55, 0.26, 0.34),
             yaw,
             corruption,
@@ -43,7 +61,7 @@ pub fn add_melanta_event(objects: &mut Vec<Box<dyn Object>>) {
         add_cube(
             objects,
             "melanta crown",
-            Vec3::new(MELANTA_X + x, 5.02 + x.abs() * 0.42, MELANTA_Z),
+            Vec3::new(MELANTA_X + x, 4.35 + x.abs() * 0.42, MELANTA_Z),
             Vec3::new(0.16, 0.72, 0.16),
             corruption,
         );
@@ -57,7 +75,7 @@ pub fn add_melanta_event(objects: &mut Vec<Box<dyn Object>>) {
                 "melanta spatial wing",
                 Vec3::new(
                     MELANTA_X + side * distance,
-                    3.85 - tier as f32 * 0.42,
+                    3.28 - tier as f32 * 0.38,
                     MELANTA_Z - 0.13,
                 ),
                 Vec3::new(1.18, 0.34, 0.24),
@@ -68,9 +86,9 @@ pub fn add_melanta_event(objects: &mut Vec<Box<dyn Object>>) {
     add_cube(
         objects,
         "melanta eye",
-        Vec3::new(MELANTA_X, 4.46, MELANTA_Z + 0.43),
-        Vec3::new(0.24, 0.24, 0.10),
-        corruption,
+        Vec3::new(MELANTA_X, 3.80, MELANTA_Z + 0.43),
+        Vec3::new(0.38, 0.28, 0.10),
+        flare,
     );
 
     // Static particles keep this phase deterministic and inexpensive.
@@ -98,7 +116,7 @@ pub fn add_melanta_event(objects: &mut Vec<Box<dyn Object>>) {
             "melanta particle",
             Vec3::new(x, y, z),
             Vec3::new(size, size * 1.8, size),
-            corruption,
+            flare,
         );
     }
 
@@ -107,16 +125,16 @@ pub fn add_melanta_event(objects: &mut Vec<Box<dyn Object>>) {
         (Vec3::new(2.18, -0.57, -2.05), Vec3::new(2.10, 0.08, 0.18)),
         (Vec3::new(0.0, -0.56, -3.52), Vec3::new(2.65, 0.06, 0.14)),
     ] {
-        add_cube(objects, "melanta corruption vein", center, size, corruption);
+        add_cube(objects, "melanta corruption vein", center, size, flare);
     }
 }
 
 fn corrupted_ink() -> Material {
     Material {
-        albedo: Vec3::new(0.24, 0.004, 0.015),
-        emission: Vec3::new(0.30, 0.004, 0.018),
-        reflectivity: 0.22,
-        texture_weight: 0.58,
+        albedo: Vec3::new(0.055, 0.002, 0.010),
+        emission: Vec3::new(0.14, 0.003, 0.025),
+        reflectivity: 0.18,
+        texture_weight: 0.68,
         ..ink()
     }
 }
@@ -133,7 +151,8 @@ fn add_cube(
 
 #[cfg(test)]
 mod tests {
-    use super::{add_melanta_event, melanta_light};
+    use super::{add_melanta_event, melanta_light, melanta_transition_light};
+    use crate::world::MemoryCoreState;
 
     #[test]
     fn event_adds_figure_particles_and_red_light() {
@@ -147,5 +166,13 @@ mod tests {
         assert!(names.contains(&"melanta particle"));
         assert!(objects.len() >= 20);
         assert!(melanta_light().color.x > melanta_light().color.y * 4.0);
+    }
+
+    #[test]
+    fn transition_light_reaches_normal_and_corrupted_endpoints() {
+        let normal = melanta_transition_light(0.0);
+        let corrupted = melanta_transition_light(1.0);
+        assert!((normal.color - MemoryCoreState::Restored.light().color).length() < 1e-6);
+        assert!((corrupted.color - melanta_light().color).length() < 1e-6);
     }
 }
