@@ -9,6 +9,9 @@ pub enum SceneState {
     Puzzle,
     MemoryRestored,
     Melanta,
+    DesertPavilion,
+    MahavaipulyaChamber,
+    LuyangAcademy,
     Final,
 }
 
@@ -43,6 +46,9 @@ impl SceneState {
             Self::Puzzle => "PUZZLE",
             Self::MemoryRestored => "MEMORY RESTORED",
             Self::Melanta => "MELANTA",
+            Self::DesertPavilion => "DESERT PAVILION",
+            Self::MahavaipulyaChamber => "MAHAVAIPULYA",
+            Self::LuyangAcademy => "LUYANG ACADEMY",
             Self::Final => "FINAL",
         }
     }
@@ -55,6 +61,9 @@ impl SceneState {
             Self::Puzzle => "puzzle",
             Self::MemoryRestored => "memory_restored",
             Self::Melanta => "melanta",
+            Self::DesertPavilion => "desert_pavilion",
+            Self::MahavaipulyaChamber => "mahavaipulya_chamber",
+            Self::LuyangAcademy => "luyang_academy",
             Self::Final => "final",
         }
     }
@@ -63,7 +72,12 @@ impl SceneState {
         match self {
             Self::Exterior => ControlMode::Portal,
             Self::Entering | Self::Melanta => ControlMode::Locked,
-            Self::Temple | Self::MemoryRestored | Self::Final => ControlMode::Camera,
+            Self::Temple
+            | Self::MemoryRestored
+            | Self::DesertPavilion
+            | Self::MahavaipulyaChamber
+            | Self::LuyangAcademy
+            | Self::Final => ControlMode::Camera,
             Self::Puzzle => ControlMode::EyeOfGod,
         }
     }
@@ -112,6 +126,9 @@ impl SceneState {
             Self::Temple => !exterior_detail && !puzzle_piece && !eye_aid,
             Self::Puzzle => !exterior_detail,
             Self::MemoryRestored | Self::Melanta | Self::Final => !exterior_detail && !eye_aid,
+            Self::DesertPavilion => false,
+            Self::MahavaipulyaChamber => false,
+            Self::LuyangAcademy => false,
         }
     }
 }

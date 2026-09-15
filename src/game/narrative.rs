@@ -73,8 +73,8 @@ fn messages(scene: SceneState) -> &'static [NarrativeMessage] {
         SceneState::Entering => &[],
         SceneState::Temple => &[
             NarrativeMessage {
-                first_line: "CADA PABELLON GUARDA UN MUNDO",
-                second_line: "TODOS CONVERGEN EN EL MEMORY CORE",
+                first_line: "ACTIVA EL OJO DE DIOS",
+                second_line: "LAS MINIATURAS DESPLEGARAN SUS MUNDOS",
                 corrupted: false,
             },
             NarrativeMessage {
@@ -104,6 +104,21 @@ fn messages(scene: SceneState) -> &'static [NarrativeMessage] {
             first_line: "LA RESTAURACION NO ESTA PERMITIDA",
             second_line: "LA MEMORIA DEBE PERMANECER QUIETA",
             corrupted: true,
+        }],
+        SceneState::DesertPavilion => &[NarrativeMessage {
+            first_line: "LA MINIATURA HA DESPLEGADO SU ESPACIO",
+            second_line: "EL DESIERTO RECUERDA EN SILENCIO",
+            corrupted: false,
+        }],
+        SceneState::MahavaipulyaChamber => &[NarrativeMessage {
+            first_line: "LAS PAGINAS SEPARADAS PIERDEN SU VOZ",
+            second_line: "DEVUELVELAS AL LIBRO ANTES DE MELANTA",
+            corrupted: false,
+        }],
+        SceneState::LuyangAcademy => &[NarrativeMessage {
+            first_line: "UNA PINTURA TAMBIEN CONSERVA UN MUNDO",
+            second_line: "ORDENA SUS PARTES ANTES DE CONFIRMAR",
+            corrupted: false,
         }],
         SceneState::Final => &[NarrativeMessage {
             first_line: "MEMORY RESTORED",
