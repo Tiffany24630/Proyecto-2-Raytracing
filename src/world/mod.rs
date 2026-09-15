@@ -1,17 +1,25 @@
+mod academy_room;
+mod desert_room;
 mod exhibitions;
 mod exterior;
+mod library_room;
 mod melanta;
 mod memory_core;
+mod nihilita;
 mod portal;
 mod puzzle_pieces;
 mod scene;
 mod skybox;
 mod temple;
 
+pub use desert_room::build_desert_room_with_seal;
+pub use library_room::build_library_room;
 pub use melanta::{add_melanta_event, melanta_light, melanta_transition_light};
 pub use memory_core::{MEMORY_CORE_CENTER, MemoryCorePose, MemoryCoreState};
+pub use nihilita::add_nihilita_epilogue;
 pub use portal::PortalView;
 pub use puzzle_pieces::{PuzzleLayout, PuzzlePieceId, PuzzlePiecePose};
 pub use scene::Scene;
 pub use skybox::temple_skybox;
 pub use temple::{build_temple, build_temple_interactive};
+pub use academy_room::build_academy_room;

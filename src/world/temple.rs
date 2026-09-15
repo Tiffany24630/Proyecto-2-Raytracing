@@ -274,10 +274,16 @@ fn add_floor_inlays(objects: &mut Vec<Box<dyn Object>>, metal: Material, mut cry
 
 fn add_portal(
     objects: &mut Vec<Box<dyn Object>>,
-    stone: Material,
-    metal: Material,
+    mut stone: Material,
+    mut metal: Material,
     mut crystal: Material,
 ) {
+    stone.albedo = Vec3::new(0.68, 0.76, 0.84);
+    stone.emission = Vec3::new(0.055, 0.070, 0.085);
+    stone.texture_weight = 0.44;
+    metal.albedo = Vec3::new(0.92, 0.70, 0.24);
+    metal.emission = Vec3::new(0.055, 0.032, 0.006);
+    metal.texture_weight = 0.58;
     for x in [-1.9, 1.9] {
         add_cube(
             objects,
@@ -285,6 +291,13 @@ fn add_portal(
             Vec3::new(x, 1.55, 8.65),
             Vec3::new(0.56, 4.75, 0.78),
             stone,
+        );
+        add_cube(
+            objects,
+            "portal golden jamb",
+            Vec3::new(x.signum() * 1.57, 1.55, 9.06),
+            Vec3::new(0.12, 4.18, 0.12),
+            metal,
         );
     }
     add_cube(
@@ -294,6 +307,15 @@ fn add_portal(
         Vec3::new(4.72, 0.52, 0.78),
         metal,
     );
+    for (y, width) in [(4.28, 4.16), (4.53, 3.22), (4.76, 2.18)] {
+        add_cube(
+            objects,
+            "portal celestial crown",
+            Vec3::new(0.0, y, 8.65),
+            Vec3::new(width, 0.18, 0.70),
+            if y > 4.28 { metal } else { stone },
+        );
+    }
     add_cube(
         objects,
         "portal threshold",
@@ -303,13 +325,27 @@ fn add_portal(
     );
     crystal.transparency = 0.76;
     crystal.reflectivity = 0.14;
-    crystal.emission = Vec3::new(0.055, 0.15, 0.23);
+    crystal.emission = Vec3::new(0.09, 0.25, 0.38);
     crystal.texture_weight = 0.58;
     add_cube(
         objects,
         "portal membrane",
         Vec3::new(0.0, 1.54, 8.61),
         Vec3::new(3.55, 4.18, 0.18),
+        crystal,
+    );
+    add_cube(
+        objects,
+        "portal central seam",
+        Vec3::new(0.0, 1.54, 8.48),
+        Vec3::new(0.10, 4.00, 0.10),
+        metal,
+    );
+    add_cube(
+        objects,
+        "portal celestial sigil",
+        Vec3::new(0.0, 1.62, 8.40),
+        Vec3::new(0.68, 0.12, 0.12),
         crystal,
     );
 }
@@ -404,6 +440,10 @@ mod tests {
             "celestial apse crest",
             "portal membrane",
             "portal threshold",
+            "portal golden jamb",
+            "portal celestial crown",
+            "portal central seam",
+            "portal celestial sigil",
             "memory core",
             "memory core focus",
             "core energy aperture",
@@ -424,7 +464,7 @@ mod tests {
         ] {
             assert!(names.contains(&required), "missing '{required}'");
         }
-        assert!((125..=175).contains(&temple.objects.len()));
+        assert!((125..=185).contains(&temple.objects.len()));
     }
 
     #[test]

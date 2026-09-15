@@ -4,6 +4,9 @@ use crate::{math::Vec3, raytracing::Camera};
 pub enum PortalView {
     Exterior,
     Interior,
+    DesertPavilion,
+    MahavaipulyaChamber,
+    LuyangAcademy,
 }
 
 impl PortalView {
@@ -23,6 +26,30 @@ impl PortalView {
                 0.0,
                 9.0_f32.to_radians(),
                 50.0,
+                aspect_ratio,
+            ),
+            Self::DesertPavilion => Camera::orbital(
+                Vec3::new(0.0, 1.35, -3.25),
+                7.2,
+                0.0,
+                5.0_f32.to_radians(),
+                45.0,
+                aspect_ratio,
+            ),
+            Self::MahavaipulyaChamber => Camera::orbital(
+                Vec3::new(0.0, 1.1, -2.35),
+                7.6,
+                0.0,
+                7.0_f32.to_radians(),
+                47.0,
+                aspect_ratio,
+            ),
+            Self::LuyangAcademy => Camera::orbital(
+                Vec3::new(0.0, 1.2, -2.8),
+                7.4,
+                0.0,
+                6.0_f32.to_radians(),
+                46.0,
                 aspect_ratio,
             ),
         }
@@ -54,5 +81,16 @@ mod tests {
             assert!(position.z > -12.4 && position.z < 8.4);
             camera.orbit(7.5_f32.to_radians(), 0.0);
         }
+    }
+
+    #[test]
+    fn desert_memory_seal_is_inside_the_initial_composition() {
+        let camera = PortalView::DesertPavilion.camera(16.0 / 9.0);
+        let (x, y) = camera
+            .project_to_screen(crate::math::Vec3::new(0.0, 2.15, -3.8), 576, 324)
+            .expect("desert memory seal should be visible");
+
+        assert!((200..=376).contains(&x));
+        assert!((60..=230).contains(&y));
     }
 }
