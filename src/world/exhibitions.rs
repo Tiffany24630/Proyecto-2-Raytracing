@@ -174,6 +174,24 @@ fn add_desert_pavilion(objects: &mut Vec<Box<dyn Object>>) {
         Vec3::new(0.48, 1.22, 0.48),
         metal,
     );
+    for (tier, size) in [(0, 1.55), (1, 1.12), (2, 0.70)] {
+        add_cube(
+            objects,
+            "desert pyramid tier",
+            Vec3::new(-6.2, 0.18 + tier as f32 * 0.24, 5.05),
+            Vec3::new(size, 0.24, size),
+            sand,
+        );
+    }
+    for x in [-7.15, -5.25] {
+        add_cube(
+            objects,
+            "desert obelisk",
+            Vec3::new(x, 0.72, 4.85),
+            Vec3::new(0.25, 1.55, 0.25),
+            metal,
+        );
+    }
 }
 
 fn add_cube(

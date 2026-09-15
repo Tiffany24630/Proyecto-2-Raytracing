@@ -97,17 +97,62 @@ impl Puzzle {
     }
 
     pub fn pieces_aligned(self) -> bool {
-        let target = PuzzleLayout::solved();
-        PuzzlePieceId::ALL.into_iter().all(|piece| {
-            let current = self.working[piece.index()];
-            let expected = target.poses[piece.index()];
-            (current.position - expected.position).length() <= POSITION_TOLERANCE
-                && angular_distance(current.yaw, expected.yaw) <= ROTATION_TOLERANCE
-        })
+        PuzzlePieceId::ALL
+            .into_iter()
+            .all(|piece| self.piece_aligned(piece))
+    }
+
+    pub fn aligned_count(self) -> usize {
+        PuzzlePieceId::ALL
+            .into_iter()
+            .filter(|piece| self.piece_aligned(*piece))
+            .count()
+    }
+
+    pub fn interaction_hint(self, camera_aligned: bool) -> &'static str {
+        let Some(piece) = self.selected else {
+            return if self.pieces_aligned() {
+                if camera_aligned {
+                    "PERSPECTIVA CORRECTA"
+                } else {
+                    "PIEZAS LISTAS: GIRA A LA DERECHA CON D"
+                }
+            } else {
+                "APUNTA A UN FRAGMENTO Y PULSA E"
+            };
+        };
+
+        let current = self.working[piece.index()];
+        let expected = PuzzleLayout::solved().poses[piece.index()];
+        let delta = expected.position - current.position;
+        if delta.y > POSITION_TOLERANCE {
+            "SUBE CON PAGEUP"
+        } else if delta.y < -POSITION_TOLERANCE {
+            "BAJA CON PAGEDOWN"
+        } else if delta.x > POSITION_TOLERANCE {
+            "MUEVE A LA DERECHA"
+        } else if delta.x < -POSITION_TOLERANCE {
+            "MUEVE A LA IZQUIERDA"
+        } else if delta.z < -POSITION_TOLERANCE {
+            "MUEVE AL FONDO CON FLECHA ARRIBA"
+        } else if delta.z > POSITION_TOLERANCE {
+            "ACERCA CON FLECHA ABAJO"
+        } else if angular_distance(current.yaw, expected.yaw) > ROTATION_TOLERANCE {
+            "ROTA CON R"
+        } else {
+            "DESTINO ALCANZADO: PULSA E"
+        }
     }
 
     pub fn is_solved(self, camera_aligned: bool) -> bool {
         self.pieces_aligned() && camera_aligned
+    }
+
+    fn piece_aligned(self, piece: PuzzlePieceId) -> bool {
+        let current = self.working[piece.index()];
+        let expected = PuzzleLayout::solved().poses[piece.index()];
+        (current.position - expected.position).length() <= POSITION_TOLERANCE
+            && angular_distance(current.yaw, expected.yaw) <= ROTATION_TOLERANCE
     }
 }
 
@@ -119,7 +164,10 @@ fn angular_distance(left: f32, right: f32) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::{POSITION_TOLERANCE, Puzzle, ROTATION_TOLERANCE};
-    use crate::world::PuzzleLayout;
+    use crate::{
+        math::Vec3,
+        world::{PuzzleLayout, PuzzlePieceId},
+    };
 
     #[test]
     fn puzzle_requires_position_rotation_and_camera_conditions() {
@@ -139,5 +187,57 @@ mod tests {
     #[test]
     fn initial_pieces_are_not_aligned() {
         assert!(!Puzzle::default().pieces_aligned());
+        assert_eq!(Puzzle::default().aligned_count(), 0);
+        assert_eq!(
+            Puzzle::default().interaction_hint(false),
+            "APUNTA A UN FRAGMENTO Y PULSA E"
+        );
+    }
+
+    #[test]
+    fn discrete_keyboard_steps_reach_the_solution() {
+        let mut puzzle = Puzzle::default();
+        for (piece, movement, rotation_steps) in [
+            (
+                PuzzlePieceId::A,
+                [
+                    (4, Vec3::new(0.18, 0.0, 0.0)),
+                    (3, Vec3::new(0.0, 0.18, 0.0)),
+                    (1, Vec3::new(0.0, 0.0, -0.18)),
+                ],
+                2,
+            ),
+            (
+                PuzzlePieceId::B,
+                [
+                    (3, Vec3::new(0.0, -0.18, 0.0)),
+                    (1, Vec3::new(0.0, 0.0, -0.18)),
+                    (0, Vec3::default()),
+                ],
+                3,
+            ),
+            (
+                PuzzlePieceId::C,
+                [
+                    (4, Vec3::new(-0.18, 0.0, 0.0)),
+                    (2, Vec3::new(0.0, 0.18, 0.0)),
+                    (2, Vec3::new(0.0, 0.0, -0.18)),
+                ],
+                4,
+            ),
+        ] {
+            puzzle.selected = Some(piece);
+            for (steps, delta) in movement {
+                for _ in 0..steps {
+                    assert!(puzzle.move_selected(delta));
+                }
+            }
+            for _ in 0..rotation_steps {
+                assert!(puzzle.rotate_selected(15.0_f32.to_radians()));
+            }
+            puzzle.selected = None;
+        }
+
+        assert!(puzzle.pieces_aligned());
     }
 }

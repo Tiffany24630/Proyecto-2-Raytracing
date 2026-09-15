@@ -9,7 +9,7 @@ use super::{Material, MaterialKind};
 pub struct Texture {
     width: usize,
     height: usize,
-    pixels: Vec<Vec3>,
+    pixels: Vec<[u8; 3]>,
 }
 
 impl Texture {
@@ -18,13 +18,7 @@ impl Texture {
         let (width, height) = image.dimensions();
         let pixels = image
             .pixels()
-            .map(|pixel| {
-                Vec3::new(
-                    pixel[0] as f32 / 255.0,
-                    pixel[1] as f32 / 255.0,
-                    pixel[2] as f32 / 255.0,
-                )
-            })
+            .map(|pixel| [pixel[0], pixel[1], pixel[2]])
             .collect();
 
         Ok(Self {
@@ -52,7 +46,12 @@ impl Texture {
     }
 
     fn pixel(&self, x: usize, y: usize) -> Vec3 {
-        self.pixels[y * self.width + x]
+        let pixel = self.pixels[y * self.width + x];
+        Vec3::new(
+            pixel[0] as f32 / 255.0,
+            pixel[1] as f32 / 255.0,
+            pixel[2] as f32 / 255.0,
+        )
     }
 }
 
@@ -91,19 +90,14 @@ impl TextureSet {
 #[cfg(test)]
 mod tests {
     use super::Texture;
-    use crate::{math::Vec3, raytracing::Uv};
+    use crate::raytracing::Uv;
 
     #[test]
     fn bilinear_sampling_repeats_uv_coordinates() {
         let texture = Texture {
             width: 2,
             height: 2,
-            pixels: vec![
-                Vec3::new(1.0, 0.0, 0.0),
-                Vec3::new(0.0, 1.0, 0.0),
-                Vec3::new(0.0, 0.0, 1.0),
-                Vec3::new(1.0, 1.0, 1.0),
-            ],
+            pixels: vec![[255, 0, 0], [0, 255, 0], [0, 0, 255], [255, 255, 255]],
         };
 
         let original = texture.sample_bilinear(Uv::new(0.125, 0.375), 1.0);

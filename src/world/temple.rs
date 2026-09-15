@@ -356,8 +356,11 @@ mod tests {
             "exterior rock",
             "wind fragment",
             "luyang painting",
+            "luyang pavilion eave",
             "mahavaipulya book",
+            "mahavaipulya floating page",
             "desert pavilion arch",
+            "desert pyramid tier",
         ] {
             assert!(names.contains(&required), "missing '{required}'");
         }

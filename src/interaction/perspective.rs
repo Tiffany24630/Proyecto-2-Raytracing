@@ -3,15 +3,12 @@ use crate::{raytracing::Camera, world::MEMORY_CORE_CENTER};
 use super::puzzle::{CAMERA_TOLERANCE, Puzzle};
 
 pub const CAMERA_POSITION_TOLERANCE: f32 = 0.40;
-pub const TARGET_RADIUS: f32 = 7.4;
-pub const TARGET_YAW: f32 = 7.5_f32.to_radians();
-pub const TARGET_PITCH: f32 = 10.0_f32.to_radians();
+pub const TARGET_RADIUS: f32 = 8.1;
+pub const TARGET_YAW: f32 = 15.0_f32.to_radians();
+pub const TARGET_PITCH: f32 = 9.0_f32.to_radians();
 
 #[derive(Clone, Copy, Debug)]
 pub struct PerspectiveCheck {
-    pub position_error: f32,
-    pub target_error: f32,
-    pub orientation_error: f32,
     pub aligned: bool,
 }
 
@@ -30,14 +27,6 @@ impl PerspectiveStatus {
             Self::CameraAligned
         } else {
             Self::Searching
-        }
-    }
-
-    pub const fn label(self) -> &'static str {
-        match self {
-            Self::Searching => "SEARCHING",
-            Self::CameraAligned => "PERSPECTIVE CORRECT",
-            Self::Solved => "MEMORY ALIGNED",
         }
     }
 }
@@ -63,9 +52,6 @@ pub fn check_perspective(camera: &Camera, aspect_ratio: f32) -> PerspectiveCheck
         .clamp(-1.0, 1.0)
         .acos();
     PerspectiveCheck {
-        position_error,
-        target_error,
-        orientation_error,
         aligned: position_error <= CAMERA_POSITION_TOLERANCE
             && target_error <= CAMERA_POSITION_TOLERANCE
             && orientation_error <= CAMERA_TOLERANCE,
@@ -99,14 +85,13 @@ mod tests {
     fn target_is_reachable_from_interior_with_discrete_controls() {
         let mut camera = Camera::orbital(
             Vec3::new(0.0, 1.0, -1.25),
-            5.0,
+            8.1,
             0.0,
-            10.0_f32.to_radians(),
-            48.0,
+            9.0_f32.to_radians(),
+            50.0,
             ASPECT_RATIO,
         );
-        camera.orbit(7.5_f32.to_radians(), 0.0);
-        camera.zoom(2.4);
+        camera.orbit(15.0_f32.to_radians(), 0.0);
 
         assert!(check_perspective(&camera, ASPECT_RATIO).aligned);
     }

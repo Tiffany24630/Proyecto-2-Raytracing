@@ -5,13 +5,13 @@ use super::{Material, MaterialKind};
 pub const fn stone() -> Material {
     Material {
         kind: MaterialKind::Stone,
-        albedo: Vec3::new(0.40, 0.44, 0.52),
-        specular: 0.15,
-        reflectivity: 0.04,
+        albedo: Vec3::new(0.82, 0.84, 0.88),
+        specular: 0.24,
+        reflectivity: 0.05,
         transparency: 0.0,
         refractive_index: 1.0,
         emission: Vec3::new(0.0, 0.0, 0.0),
-        texture_scale: 1.4,
-        texture_weight: 0.82,
+        texture_scale: 1.15,
+        texture_weight: 0.76,
     }
 }
