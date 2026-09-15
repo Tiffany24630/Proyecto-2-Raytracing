@@ -5,11 +5,28 @@ use crate::{
     world::{PuzzleLayout, PuzzlePieceId, PuzzlePiecePose},
 };
 
-use super::selection::object_at;
+use super::selection::puzzle_piece_at;
 
 pub const POSITION_TOLERANCE: f32 = 0.12;
 pub const ROTATION_TOLERANCE: f32 = 5.0_f32.to_radians();
 pub const CAMERA_TOLERANCE: f32 = 8.0_f32.to_radians();
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PieceStatus {
+    Fragmented,
+    Near,
+    Aligned,
+}
+
+impl PieceStatus {
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Fragmented => "--",
+            Self::Near => "CERCA",
+            Self::Aligned => "OK",
+        }
+    }
+}
 
 #[derive(Clone, Copy, Debug)]
 pub struct Puzzle {
@@ -51,7 +68,8 @@ impl Puzzle {
             return true;
         }
 
-        self.selected = object_at(camera, objects, u, v).and_then(PuzzlePieceId::from_object_name);
+        self.selected =
+            puzzle_piece_at(camera, objects, u, v).and_then(PuzzlePieceId::from_object_name);
         self.selected.is_some()
     }
 
@@ -109,6 +127,31 @@ impl Puzzle {
             .count()
     }
 
+    pub fn piece_statuses(self) -> [PieceStatus; 3] {
+        PuzzlePieceId::ALL.map(|piece| {
+            if self.piece_aligned(piece) {
+                PieceStatus::Aligned
+            } else {
+                let current = self.working[piece.index()];
+                let expected = PuzzleLayout::solved().poses[piece.index()];
+                if (current.position - expected.position).length() <= POSITION_TOLERANCE * 2.5 {
+                    PieceStatus::Near
+                } else {
+                    PieceStatus::Fragmented
+                }
+            }
+        })
+    }
+
+    pub const fn selected_label(self) -> &'static str {
+        match self.selected {
+            Some(PuzzlePieceId::A) => "A",
+            Some(PuzzlePieceId::B) => "B",
+            Some(PuzzlePieceId::C) => "C",
+            None => "--",
+        }
+    }
+
     pub fn interaction_hint(self, camera_aligned: bool) -> &'static str {
         let Some(piece) = self.selected else {
             return if self.pieces_aligned() {
@@ -163,7 +206,7 @@ fn angular_distance(left: f32, right: f32) -> f32 {
 
 #[cfg(test)]
 mod tests {
-    use super::{POSITION_TOLERANCE, Puzzle, ROTATION_TOLERANCE};
+    use super::{POSITION_TOLERANCE, PieceStatus, Puzzle, ROTATION_TOLERANCE};
     use crate::{
         math::Vec3,
         world::{PuzzleLayout, PuzzlePieceId},
@@ -185,12 +228,52 @@ mod tests {
     }
 
     #[test]
+    fn every_piece_rejects_wrong_position_and_wrong_rotation() {
+        for piece in PuzzlePieceId::ALL {
+            let mut wrong_position = PuzzleLayout::solved();
+            wrong_position.poses[piece.index()].position.x += POSITION_TOLERANCE * 2.0;
+            let puzzle = Puzzle::from_layout(wrong_position);
+            assert!(
+                !puzzle.pieces_aligned(),
+                "piece {piece:?} accepted a wrong position"
+            );
+            assert!(!puzzle.is_solved(true));
+
+            let mut wrong_rotation = PuzzleLayout::solved();
+            wrong_rotation.poses[piece.index()].yaw += ROTATION_TOLERANCE * 2.0;
+            let puzzle = Puzzle::from_layout(wrong_rotation);
+            assert!(
+                !puzzle.pieces_aligned(),
+                "piece {piece:?} accepted a wrong rotation"
+            );
+            assert!(!puzzle.is_solved(true));
+        }
+    }
+
+    #[test]
     fn initial_pieces_are_not_aligned() {
         assert!(!Puzzle::default().pieces_aligned());
         assert_eq!(Puzzle::default().aligned_count(), 0);
         assert_eq!(
             Puzzle::default().interaction_hint(false),
             "APUNTA A UN FRAGMENTO Y PULSA E"
+        );
+    }
+
+    #[test]
+    fn status_distinguishes_near_from_fully_aligned() {
+        let mut puzzle = Puzzle::from_layout(PuzzleLayout::solved());
+        puzzle.working[0].yaw += ROTATION_TOLERANCE * 2.0;
+        puzzle.working[1].position.x += POSITION_TOLERANCE * 2.0;
+        puzzle.working[2].position.x += POSITION_TOLERANCE * 4.0;
+
+        assert_eq!(
+            puzzle.piece_statuses(),
+            [
+                PieceStatus::Near,
+                PieceStatus::Near,
+                PieceStatus::Fragmented
+            ]
         );
     }
 

@@ -8,14 +8,6 @@ impl EyeOfGod {
         self.active = !self.active;
     }
 
-    pub fn cancel(&mut self) -> bool {
-        if !self.active {
-            return false;
-        }
-        self.active = false;
-        true
-    }
-
     pub const fn is_active(self) -> bool {
         self.active
     }
@@ -26,13 +18,12 @@ mod tests {
     use super::EyeOfGod;
 
     #[test]
-    fn mode_can_be_enabled_disabled_and_cancelled() {
+    fn mode_can_be_enabled_and_disabled() {
         let mut eye = EyeOfGod::default();
         assert!(!eye.is_active());
         eye.toggle();
         assert!(eye.is_active());
-        assert!(eye.cancel());
+        eye.toggle();
         assert!(!eye.is_active());
-        assert!(!eye.cancel());
     }
 }
