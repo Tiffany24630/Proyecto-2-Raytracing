@@ -72,3 +72,34 @@ pub fn closest_hit(
 
     result
 }
+
+pub fn any_hit(ray: &Ray, objects: &[Box<dyn Object>], t_min: f32, t_max: f32) -> bool {
+    objects
+        .iter()
+        .any(|object| object.hit(ray, t_min, t_max).is_some())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::any_hit;
+    use crate::{
+        geometry::{Cube, Object},
+        materials::stone,
+        math::Vec3,
+        raytracing::Ray,
+    };
+
+    #[test]
+    fn shadow_query_reports_only_hits_inside_the_requested_distance() {
+        let objects: Vec<Box<dyn Object>> = vec![Box::new(Cube::from_center(
+            "blocker",
+            Vec3::new(0.0, 0.0, -3.0),
+            Vec3::new(1.0, 1.0, 1.0),
+            stone(),
+        ))];
+        let ray = Ray::new(Vec3::default(), Vec3::new(0.0, 0.0, -1.0));
+
+        assert!(any_hit(&ray, &objects, 0.001, 10.0));
+        assert!(!any_hit(&ray, &objects, 0.001, 2.0));
+    }
+}

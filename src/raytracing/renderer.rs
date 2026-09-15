@@ -3,7 +3,7 @@ use std::{fs, io, path::Path};
 use crate::{geometry::Object, materials::TextureSet, math::Vec3};
 
 use super::{
-    Camera, Light, MAX_DEPTH, Ray, closest_hit,
+    Camera, Light, MAX_DEPTH, Ray, any_hit, closest_hit,
     lighting::shade,
     reflection::reflect,
     refraction::{refract, schlick_reflectance},
@@ -161,7 +161,7 @@ impl Renderer {
         let light_direction = to_light / light_distance;
         let shadow_origin = hit.point + hit.normal * 0.001;
         let shadow_ray = Ray::new(shadow_origin, light_direction);
-        let in_shadow = closest_hit(&shadow_ray, objects, 0.001, light_distance - 0.001).is_some();
+        let in_shadow = any_hit(&shadow_ray, objects, 0.001, light_distance - 0.001);
 
         let texture_color = textures.sample(hit.material, hit.uv, hit.object_name);
         let texture_weight = hit.material.texture_weight;
@@ -360,6 +360,12 @@ mod tone_mapping_tests {
                 .with_max_depth(1)
                 .max_depth,
             1
+        );
+        assert_eq!(
+            Renderer::new(480, 270, Vec3::default())
+                .with_max_depth(0)
+                .max_depth,
+            0
         );
         assert_eq!(
             Renderer::new(480, 270, Vec3::default())
