@@ -56,6 +56,7 @@ impl Texture {
 }
 
 pub struct TextureSet {
+    grass: Texture,
     stone: Texture,
     wood: Texture,
     metal: Texture,
@@ -67,6 +68,7 @@ impl TextureSet {
     pub fn load_from_directory(directory: impl AsRef<Path>) -> ImageResult<Self> {
         let directory = directory.as_ref();
         Ok(Self {
+            grass: Texture::load(directory.join("grass.png"))?,
             stone: Texture::load(directory.join("stone_celestial.png"))?,
             wood: Texture::load(directory.join("wood.png"))?,
             metal: Texture::load(directory.join("metal.png"))?,
@@ -75,13 +77,17 @@ impl TextureSet {
         })
     }
 
-    pub fn sample(&self, material: Material, uv: Uv) -> Vec3 {
-        let texture = match material.kind {
-            MaterialKind::Stone => &self.stone,
-            MaterialKind::Wood => &self.wood,
-            MaterialKind::Metal => &self.metal,
-            MaterialKind::Crystal => &self.crystal,
-            MaterialKind::Ink => &self.ink,
+    pub fn sample(&self, material: Material, uv: Uv, surface_name: &str) -> Vec3 {
+        let texture = if surface_name.starts_with("exterior grass") {
+            &self.grass
+        } else {
+            match material.kind {
+                MaterialKind::Stone => &self.stone,
+                MaterialKind::Wood => &self.wood,
+                MaterialKind::Metal => &self.metal,
+                MaterialKind::Crystal => &self.crystal,
+                MaterialKind::Ink => &self.ink,
+            }
         };
         texture.sample_bilinear(uv, material.texture_scale)
     }

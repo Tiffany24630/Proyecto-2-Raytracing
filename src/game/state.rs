@@ -93,8 +93,7 @@ impl SceneState {
     }
 
     pub fn object_visible(self, name: &str) -> bool {
-        let exterior_detail =
-            name == "wind fragment" || (name.starts_with("exterior ") && name != "exterior floor");
+        let exterior_detail = name == "wind fragment" || name.starts_with("exterior ");
         let puzzle_piece = name.starts_with("puzzle piece");
         let eye_aid = name.starts_with("spatial ") || name.starts_with("dex ");
         let interior_detail = puzzle_piece
@@ -128,6 +127,8 @@ mod tests {
         assert!(!SceneState::Temple.object_visible("puzzle piece A"));
         assert!(SceneState::Puzzle.object_visible("puzzle piece A"));
         assert!(!SceneState::Puzzle.object_visible("exterior rock"));
+        assert!(SceneState::Exterior.object_visible("exterior grass"));
+        assert!(!SceneState::Temple.object_visible("exterior grass"));
         assert_eq!(SceneState::Melanta.sky(), SkyState::Melanta);
         assert_eq!(
             SceneState::Entering.animation(),

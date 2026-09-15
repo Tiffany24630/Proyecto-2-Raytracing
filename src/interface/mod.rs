@@ -1,5 +1,6 @@
 use crate::{
     game::{NarrativeMessage, SceneState},
+    interaction::PieceStatus,
     math::Vec3,
     raytracing::Camera,
 };
@@ -8,11 +9,13 @@ use crate::{
 pub struct UiState {
     pub scene: SceneState,
     pub eye_active: bool,
-    pub object_selected: bool,
+    pub selected_fragment: &'static str,
     pub aligned_pieces: usize,
+    pub piece_statuses: [PieceStatus; 3],
     pub interaction_hint: &'static str,
-    pub pieces_aligned: bool,
     pub camera_aligned: bool,
+    pub camera_progress: f32,
+    pub camera_stage: &'static str,
     pub timeline: f32,
     pub timeline_playing: bool,
     pub sky_corruption: f32,
@@ -146,7 +149,7 @@ fn draw_context_message(pixels: &mut [Vec3], width: usize, height: usize, state:
             Vec3::new(0.55, 0.88, 1.0),
         ),
         SceneState::Puzzle => (
-            "OJO DE DIOS",
+            "MEMORY FRAGMENT",
             state.interaction_hint,
             Vec3::new(0.32, 0.86, 1.0),
         ),
@@ -172,68 +175,103 @@ fn draw_context_message(pixels: &mut [Vec3], width: usize, height: usize, state:
         1,
         Vec3::new(0.86, 0.90, 1.0),
     );
+    if state.scene == SceneState::Puzzle {
+        draw_puzzle_progress(pixels, width, height, state);
+    }
+}
+
+fn draw_puzzle_progress(pixels: &mut [Vec3], width: usize, height: usize, state: UiState) {
+    let [piece_a, piece_b, piece_c] = state.piece_statuses;
+    let progress = state.camera_progress.clamp(0.0, 1.0);
+    let summary = format!(
+        "{}/3  A:{} B:{} C:{}  VINCULO:{}  CAMARA {:03.0}% {}",
+        state.aligned_pieces,
+        piece_a.label(),
+        piece_b.label(),
+        piece_c.label(),
+        state.selected_fragment,
+        progress * 100.0,
+        state.camera_stage,
+    );
+    draw_centered_text(
+        pixels,
+        width,
+        height,
+        69,
+        &summary,
+        1,
+        if state.camera_aligned {
+            Vec3::new(0.20, 1.0, 0.84)
+        } else {
+            Vec3::new(0.58, 0.82, 1.0)
+        },
+    );
+
+    let bar_width = width.min(180);
+    let bar_x = width.saturating_sub(bar_width) / 2;
+    draw_panel(pixels, width, height, bar_x, 80, bar_width, 5, 0.84);
+    let fill_width = ((bar_width.saturating_sub(4)) as f32 * progress).round() as usize;
+    let color = if state.camera_aligned {
+        Vec3::new(0.12, 1.0, 0.78)
+    } else if progress >= 0.82 {
+        Vec3::new(0.94, 0.78, 0.24)
+    } else {
+        Vec3::new(0.20, 0.72, 1.0)
+    };
+    fill_rect(pixels, width, height, bar_x + 2, 82, fill_width, 1, color);
 }
 
 fn instructions(state: UiState) -> (String, String) {
     match state.scene {
         SceneState::Exterior => (
-            "E  ENTER PORTAL     WASD OR ARROWS  CAMERA".into(),
-            "+ OR -  ZOOM     ESC  EXIT".into(),
+            "E  CRUZAR MEMORY GATE     RMB / WASD  CAMARA".into(),
+            "RUEDA O + / -  ZOOM     ESC  SALIR".into(),
         ),
         SceneState::Entering => (
-            "PORTAL TRANSITION IN PROGRESS".into(),
-            "CONTROLS TEMPORARILY LOCKED".into(),
+            "TRANSICION DEL PORTAL EN CURSO".into(),
+            "CONTROLES TEMPORALMENTE BLOQUEADOS".into(),
         ),
         SceneState::Temple => (
-            "TAB  OJO DE DIOS / DEX     WASD O FLECHAS  CAMARA".into(),
-            "M  VER MELANTA     E  VOLVER     + O -  ZOOM".into(),
+            "TAB  ACTIVAR OJO DE DIOS     RMB / WASD  CAMARA".into(),
+            "E  VOLVER AL PORTAL     RUEDA O + / -  ZOOM     ESC  SALIR".into(),
         ),
         SceneState::Puzzle => {
-            let eye = if state.eye_active { "ACTIVE" } else { "OFF" };
-            let selection = if state.object_selected {
-                "SELECTED"
+            let eye = if state.eye_active {
+                "OJO ACTIVO"
             } else {
-                "AIM"
-            };
-            let alignment = if state.pieces_aligned && state.camera_aligned {
-                "ALIGNED"
-            } else {
-                "FRAGMENTED"
+                "OJO OFF"
             };
             (
-                "E VINCULAR/SOLTAR   ESC CANCELAR   A/D CAMARA".into(),
-                format!(
-                    "FLECHAS XZ  PGUP/PGDN Y  R ROTAR  {}/3  {eye} {selection} {alignment}",
-                    state.aligned_pieces,
-                ),
+                "CLICK/E VINCULAR  ESC CANCELAR  R ROTAR".into(),
+                format!("FLECHAS MOVER  PGUP/PGDN ALTURA  RMB/WASD CAMARA  {eye}"),
             )
         }
         SceneState::MemoryRestored => {
             let playback = if state.timeline_playing {
-                "PLAY"
+                "ACTIVA"
             } else {
-                "PAUSE"
+                "PAUSA"
             };
             (
+                "INTERVENCION AUTOMATICA     M  ADELANTAR     T  REPETIR".into(),
                 format!(
-                    "T  REPLAY     SPACE  PAUSE     TIMELINE {:03.0}% {playback}",
-                    state.timeline * 100.0
+                    "TIMELINE {:03.0}% {playback}     SPACE CONTROL     WASD CAMARA",
+                    state.timeline * 100.0,
                 ),
-                "M  MELANTA     WASD OR ARROWS  CAMERA".into(),
             )
         }
         SceneState::Melanta => {
             let action = if state.sky_corruption >= 1.0 {
-                "F  RESTORE MEMORY     ESC  EXIT"
+                "F  RESTAURAR MEMORIA     ESC  SALIR"
             } else {
-                "CORRUPTION SPREADING     CONTROLS LOCKED"
+                "CORRUPCION EN CURSO     CONTROLES BLOQUEADOS"
             };
             (
-                format!("CORRUPTION {:03.0}%", state.sky_corruption * 100.0),
+                format!("CORRUPCION {:03.0}%", state.sky_corruption * 100.0),
                 action.into(),
             )
         }
-        SceneState::Final => ("MEMORY PRESERVATION COMPLETE".into(), "ESC  EXIT".into()),
+        SceneState::Final => ("MEMORY PRESERVATION COMPLETE".into(), "ESC  SALIR".into()),
     }
 }
 
@@ -267,6 +305,24 @@ fn draw_panel(
         for column in x..(x + panel_width).min(width) {
             let index = row * width + column;
             pixels[index] = pixels[index] * (1.0 - opacity) + panel_color * opacity;
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn fill_rect(
+    pixels: &mut [Vec3],
+    width: usize,
+    height: usize,
+    x: usize,
+    y: usize,
+    rect_width: usize,
+    rect_height: usize,
+    color: Vec3,
+) {
+    for row in y..(y + rect_height).min(height) {
+        for column in x..(x + rect_width).min(width) {
+            pixels[row * width + column] = color;
         }
     }
 }
@@ -376,7 +432,7 @@ fn glyph(character: char) -> [u8; 7] {
 
 #[cfg(test)]
 mod tests {
-    use super::{UiState, draw_interface};
+    use super::{PieceStatus, UiState, draw_interface, instructions};
     use crate::{game::SceneState, math::Vec3};
 
     #[test]
@@ -389,11 +445,13 @@ mod tests {
             UiState {
                 scene: SceneState::Puzzle,
                 eye_active: true,
-                object_selected: false,
+                selected_fragment: "--",
                 aligned_pieces: 0,
+                piece_statuses: [PieceStatus::Fragmented; 3],
                 interaction_hint: "VINCULA UN FRAGMENTO CON E",
-                pieces_aligned: false,
                 camera_aligned: false,
+                camera_progress: 0.5,
+                camera_stage: "ACERCANDOTE",
                 timeline: 0.0,
                 timeline_playing: false,
                 sky_corruption: 0.0,
@@ -405,5 +463,47 @@ mod tests {
                 .iter()
                 .any(|pixel| *pixel != Vec3::new(0.5, 0.5, 0.5))
         );
+    }
+
+    #[test]
+    fn instructions_fit_the_window_and_explain_automatic_melanta() {
+        let base = UiState {
+            scene: SceneState::Exterior,
+            eye_active: true,
+            selected_fragment: "--",
+            aligned_pieces: 0,
+            piece_statuses: [PieceStatus::Fragmented; 3],
+            interaction_hint: "VINCULA UN FRAGMENTO CON E",
+            camera_aligned: false,
+            camera_progress: 0.5,
+            camera_stage: "ACERCANDOTE",
+            timeline: 1.0,
+            timeline_playing: false,
+            sky_corruption: 0.0,
+        };
+
+        for scene in [
+            SceneState::Exterior,
+            SceneState::Entering,
+            SceneState::Temple,
+            SceneState::Puzzle,
+            SceneState::MemoryRestored,
+            SceneState::Melanta,
+            SceneState::Final,
+        ] {
+            let (first, second) = instructions(UiState { scene, ..base });
+            assert!(first.chars().count() <= 77, "first line clips in {scene:?}");
+            assert!(
+                second.chars().count() <= 77,
+                "second line clips in {scene:?}"
+            );
+        }
+
+        let (first, _) = instructions(UiState {
+            scene: SceneState::MemoryRestored,
+            ..base
+        });
+        assert!(first.contains("INTERVENCION AUTOMATICA"));
+        assert!(first.contains("M  ADELANTAR"));
     }
 }
