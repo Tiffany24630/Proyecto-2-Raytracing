@@ -19,6 +19,18 @@ pub struct UiState {
     pub timeline: f32,
     pub timeline_playing: bool,
     pub sky_corruption: f32,
+    pub desert_lives: u8,
+    pub desert_watches: u8,
+    pub desert_status: &'static str,
+    pub library_pages: u32,
+    pub library_seconds: u8,
+    pub library_status: &'static str,
+    pub academy_selected: &'static str,
+    pub academy_status: &'static str,
+    pub academy_order: [u8; 3],
+    pub hub_unlocked: bool,
+    pub exhibitions_completed: u32,
+    pub all_exhibitions_completed: bool,
 }
 
 pub fn draw_interface(pixels: &mut [Vec3], width: usize, height: usize, state: UiState) {
@@ -33,7 +45,11 @@ pub fn draw_interface(pixels: &mut [Vec3], width: usize, height: usize, state: U
         2,
         Vec3::new(0.72, 0.90, 1.0),
     );
-    let state_label = state.scene.label();
+    let state_label = if state.scene == SceneState::Temple && state.hub_unlocked {
+        format!("MEMORIES {}/3", state.exhibitions_completed)
+    } else {
+        state.scene.label().to_string()
+    };
     let label_x = width.saturating_sub(state_label.len() * 6 + 8);
     draw_text(
         pixels,
@@ -41,9 +57,13 @@ pub fn draw_interface(pixels: &mut [Vec3], width: usize, height: usize, state: U
         height,
         label_x,
         11,
-        state_label,
+        &state_label,
         1,
-        Vec3::new(0.95, 0.78, 0.28),
+        if state.all_exhibitions_completed {
+            Vec3::new(0.20, 1.0, 0.78)
+        } else {
+            Vec3::new(0.95, 0.78, 0.28)
+        },
     );
 
     draw_context_message(pixels, width, height, state);
@@ -148,20 +168,45 @@ fn draw_context_message(pixels: &mut [Vec3], width: usize, height: usize, state:
             "ACCESSING PRESERVED MEMORY",
             Vec3::new(0.55, 0.88, 1.0),
         ),
+        SceneState::Temple if state.eye_active => (
+            "OJO DE DIOS ACTIVO",
+            "SELECCIONA UNA MINIATURA PARA ENTRAR",
+            Vec3::new(0.32, 0.88, 1.0),
+        ),
         SceneState::Puzzle => (
             "MEMORY FRAGMENT",
             state.interaction_hint,
             Vec3::new(0.32, 0.86, 1.0),
         ),
-        SceneState::MemoryRestored | SceneState::Final => (
+        SceneState::MemoryRestored => (
             "MEMORY RESTORED",
             "THE SPACE REMEMBERS",
             Vec3::new(0.22, 0.95, 0.92),
+        ),
+        SceneState::Final => (
+            "MEMORIAS RESTAURADAS",
+            "NIHILITA TE ESPERA EN EL TEMPLO",
+            Vec3::new(0.38, 0.94, 1.0),
         ),
         SceneState::Melanta => (
             "MEMORY CORRUPTED",
             "MELANTA INTERVENTION",
             Vec3::new(1.0, 0.10, 0.08),
+        ),
+        SceneState::DesertPavilion => (
+            "DESERT PAVILION",
+            state.desert_status,
+            Vec3::new(1.0, 0.70, 0.24),
+        ),
+        SceneState::MahavaipulyaChamber => (
+            "MAHAVAIPULYA CHAMBER",
+            state.library_status,
+            Vec3::new(0.38, 0.82, 1.0),
+        ),
+        SceneState::LuyangAcademy => (
+            "LUYANG ACADEMY",
+            state.academy_status,
+            Vec3::new(1.0, 0.62, 0.28),
         ),
         _ => return,
     };
@@ -177,6 +222,64 @@ fn draw_context_message(pixels: &mut [Vec3], width: usize, height: usize, state:
     );
     if state.scene == SceneState::Puzzle {
         draw_puzzle_progress(pixels, width, height, state);
+    } else if state.scene == SceneState::DesertPavilion {
+        let summary = format!(
+            "VIDAS {}/3     APARICIONES {}/3",
+            state.desert_lives, state.desert_watches
+        );
+        draw_centered_text(
+            pixels,
+            width,
+            height,
+            70,
+            &summary,
+            1,
+            if state.desert_lives > 1 {
+                Vec3::new(1.0, 0.80, 0.30)
+            } else {
+                Vec3::new(1.0, 0.12, 0.08)
+            },
+        );
+    } else if state.scene == SceneState::MahavaipulyaChamber {
+        let summary = format!(
+            "TIEMPO {:02}s     PAGINAS {}/3",
+            state.library_seconds, state.library_pages
+        );
+        draw_centered_text(
+            pixels,
+            width,
+            height,
+            70,
+            &summary,
+            1,
+            if state.library_seconds > 15 {
+                Vec3::new(0.46, 0.88, 1.0)
+            } else {
+                Vec3::new(1.0, 0.14, 0.08)
+            },
+        );
+    } else if state.scene == SceneState::LuyangAcademy {
+        let fragment_label = |fragment| match fragment {
+            0 => 'A',
+            1 => 'B',
+            _ => 'C',
+        };
+        let summary = format!(
+            "ORDEN {}-{}-{}     SELECCION {}",
+            fragment_label(state.academy_order[0]),
+            fragment_label(state.academy_order[1]),
+            fragment_label(state.academy_order[2]),
+            state.academy_selected,
+        );
+        draw_centered_text(
+            pixels,
+            width,
+            height,
+            70,
+            &summary,
+            1,
+            Vec3::new(1.0, 0.76, 0.38),
+        );
     }
 }
 
@@ -231,10 +334,17 @@ fn instructions(state: UiState) -> (String, String) {
             "TRANSICION DEL PORTAL EN CURSO".into(),
             "CONTROLES TEMPORALMENTE BLOQUEADOS".into(),
         ),
-        SceneState::Temple => (
-            "TAB  ACTIVAR OJO DE DIOS     RMB / WASD  CAMARA".into(),
-            "E  VOLVER AL PORTAL     RUEDA O + / -  ZOOM     ESC  SALIR".into(),
-        ),
+        SceneState::Temple => {
+            let first = if state.eye_active {
+                "OJO ACTIVO     CLICK/E SOBRE MINIATURA PARA ENTRAR"
+            } else {
+                "TAB  ACTIVAR OJO DE DIOS     RMB / WASD  CAMARA"
+            };
+            (
+                first.into(),
+                "E FUERA DE MINIATURA  VOLVER     RUEDA O + / -  ZOOM".into(),
+            )
+        }
         SceneState::Puzzle => {
             let eye = if state.eye_active {
                 "OJO ACTIVO"
@@ -271,7 +381,22 @@ fn instructions(state: UiState) -> (String, String) {
                 action.into(),
             )
         }
-        SceneState::Final => ("MEMORY PRESERVATION COMPLETE".into(), "ESC  SALIR".into()),
+        SceneState::DesertPavilion => (
+            "R  ROTAR SELLO     E  ACTIVAR/CONFIRMAR     B  VOLVER AL TEMPLO".into(),
+            "RMB / WASD  CAMARA     SI APARECE MELANTA: NO TE MUEVAS".into(),
+        ),
+        SceneState::MahavaipulyaChamber => (
+            "CLICK/E  RECOGER PAGINA     B  VOLVER AL TEMPLO".into(),
+            "REUNE 3 PAGINAS ANTES DE QUE EL TIEMPO LLEGUE A CERO".into(),
+        ),
+        SceneState::LuyangAcademy => (
+            "CLICK/E SELECCIONAR     R MOVER DERECHA     B VOLVER".into(),
+            "CLICK/E SOBRE EL BOTON CENTRAL PARA CONFIRMAR".into(),
+        ),
+        SceneState::Final => (
+            "EPILOGO COMPLETADO     E  FINALIZAR".into(),
+            "RMB / WASD  OBSERVAR     ESC  SALIR".into(),
+        ),
     }
 }
 
@@ -455,6 +580,18 @@ mod tests {
                 timeline: 0.0,
                 timeline_playing: false,
                 sky_corruption: 0.0,
+                desert_lives: 3,
+                desert_watches: 0,
+                desert_status: "R GIRA EL SELLO HACIA LA PUERTA",
+                library_pages: 0,
+                library_seconds: 45,
+                library_status: "ENCUENTRA LAS TRES PAGINAS",
+                academy_selected: "--",
+                academy_status: "SELECCIONA UN FRAGMENTO DE LA PINTURA",
+                academy_order: [2, 0, 1],
+                hub_unlocked: false,
+                exhibitions_completed: 0,
+                all_exhibitions_completed: false,
             },
         );
         assert_eq!(pixels.len(), 160 * 90);
@@ -480,6 +617,18 @@ mod tests {
             timeline: 1.0,
             timeline_playing: false,
             sky_corruption: 0.0,
+            desert_lives: 3,
+            desert_watches: 0,
+            desert_status: "R GIRA EL SELLO HACIA LA PUERTA",
+            library_pages: 0,
+            library_seconds: 45,
+            library_status: "ENCUENTRA LAS TRES PAGINAS",
+            academy_selected: "--",
+            academy_status: "SELECCIONA UN FRAGMENTO DE LA PINTURA",
+            academy_order: [2, 0, 1],
+            hub_unlocked: false,
+            exhibitions_completed: 0,
+            all_exhibitions_completed: false,
         };
 
         for scene in [
@@ -489,6 +638,9 @@ mod tests {
             SceneState::Puzzle,
             SceneState::MemoryRestored,
             SceneState::Melanta,
+            SceneState::DesertPavilion,
+            SceneState::MahavaipulyaChamber,
+            SceneState::LuyangAcademy,
             SceneState::Final,
         ] {
             let (first, second) = instructions(UiState { scene, ..base });

@@ -53,6 +53,10 @@ impl SceneTransition {
         (1.0 - (2.0 * self.progress - 1.0).abs()) * 0.82
     }
 
+    pub fn white_opacity(self) -> f32 {
+        1.0 - (2.0 * self.progress - 1.0).abs()
+    }
+
     pub const fn is_finished(self) -> bool {
         self.progress >= 1.0
     }
@@ -74,6 +78,7 @@ mod tests {
         assert!(transition.update(1.0));
         assert_eq!(transition.progress(), 0.5);
         assert!((transition.fade_opacity() - 0.82).abs() < f32::EPSILON);
+        assert!((transition.white_opacity() - 1.0).abs() < f32::EPSILON);
         assert!(transition.update(2.0));
         assert!(transition.is_finished());
         assert_eq!(transition.fade_opacity(), 0.0);

@@ -29,7 +29,8 @@ La escena no reutiliza modelos ni texturas extraídos del juego. Es una interpre
 - Texturas PNG estilizadas para los cinco materiales y el terreno, con UV, repetición y filtrado bilineal.
 - Cámara orbital limitada al interior del salón.
 - Selección de objetos mediante ray casting.
-- Puzzle que requiere posición, rotación y perspectiva correctas.
+- Ojo de Dios que revela y habilita tres memorias jugables mediante ray casting.
+- Tres desafíos breves: quietud en el desierto, páginas contrarreloj y pintura ordenable.
 - Timeline de memoria, evento de Melanta y skybox procedural.
 - Interfaz y narrativa integradas en el framebuffer.
 
@@ -39,12 +40,6 @@ Usa el perfil optimizado:
 
 ```bash
 cargo run --release
-```
-
-Para generar la galería de estados finales:
-
-```bash
-cargo run --release -- --render-once
 ```
 
 ## Controles
@@ -59,23 +54,18 @@ cargo run --release -- --render-once
 | Zoom | Rueda del ratón o `+` / `-` |
 | Entrar o regresar por el portal | `E` |
 
-### Ojo de Dios y vínculo espacial de Dex
+### Ojo de Dios
 
-El Ojo de Dios funciona como modo de percepción. Dex establece un vínculo con el fragmento señalado por el ratón; las siluetas celestes indican los destinos preservados y los marcadores brillantes confirman qué pieza está vinculada.
+El Ojo de Dios funciona como modo de percepción. Al activarlo en el templo, las miniaturas de Luyang, Mahavaipulya y Desert Pavilion se convierten en accesos a sus memorias preservadas. No existe un puzzle obligatorio antes de entrar a las salas.
 
-El mensaje central cambia según el error actual y explica la siguiente acción necesaria: seleccionar, subir, bajar, desplazar, rotar o corregir la cámara.
-
-Las tolerancias aceptan pequeños errores de posición, rotación y cámara. Las piezas no se colocan automáticamente: el jugador continúa realizando la reconstrucción.
+El raycast solo considera geometría interactiva y admite un pequeño margen alrededor del cursor para evitar que columnas u otros elementos decorativos bloqueen la selección.
 
 | Acción | Tecla |
 |---|---|
-| Activar o cerrar el modo | `Tab` |
+| Activar el modo en el templo | `Tab` |
 | Apuntar | Ratón |
-| Vincular o soltar | Clic izquierdo o `E` |
-| Mover en X/Z | Flechas |
-| Mover verticalmente en Y | `PageUp` / `PageDown` |
-| Rotar el fragmento | `R` |
-| Cancelar el movimiento actual | `Esc` |
+| Entrar a una miniatura | Clic izquierdo o `E` |
+| Regresar al templo desde una sala | `B` |
 
 ### Memoria
 
@@ -90,42 +80,26 @@ Las tolerancias aceptan pequeños errores de posición, rotación y cámara. Las
 
 1. Pulsa `E` en el exterior para cruzar el portal.
 2. Explora el salón con la cámara y pulsa `Tab` para activar el Ojo de Dios.
-3. Apunta a un fragmento y pulsa `E` para vincularlo.
-4. Llévalo a una silueta celeste, rota la pieza y pulsa `E` para soltarla.
-5. Repite el proceso con los tres fragmentos.
-6. Ajusta la cámara hasta que el indicador confirme la perspectiva correcta.
-7. Observa la reconstrucción; Melanta intervendrá automáticamente después de una breve pausa. `M` permite adelantarla.
-8. Cuando la corrupción alcance 100%, pulsa `F`.
-
-### Solución reproducible
-
-```text
-Pieza A: Right ×4, PageUp ×3, Up ×1, R ×2
-Pieza B: PageDown ×3, Up ×1, R ×3
-Pieza C: Left ×4, PageUp ×2, Up ×2, R ×4
-Cámara:  D ×3, + ×2
-```
-
-Confirma cada pieza con `E` antes de seleccionar la siguiente.
+3. Apunta a una miniatura y usa clic izquierdo o `E` para entrar.
+4. En Desert Pavilion, gira y confirma el sello; cuando aparezca Melanta, permanece inmóvil.
+5. En Mahavaipulya, recoge las tres páginas antes de que termine el cronómetro.
+6. En Luyang, selecciona una sección, muévela con `R` y confirma el orden en el botón central. La solución inicial requiere seleccionar `A` y pulsar `R` dos veces.
+7. Usa `B` para volver al templo y continúa con las demás memorias.
+8. Al regresar después de completar las tres salas, escucha el mensaje final de Nihilita. Pulsa `E` para terminar.
 
 ## Rendimiento
 
 La resolución interactiva es `576 × 324`, mostrada inicialmente a escala doble en una ventana redimensionable de `1152 × 648`. El renderer:
 
 - recalcula únicamente cuando cambia la cámara, la escena o una animación;
-- usa una previsualización `352 × 198`, filtrado bilineal y un rebote durante el movimiento, y recupera automáticamente la resolución completa con `MAX_DEPTH` tras 60 ms de reposo;
+- usa una previsualización `400 × 225` con filtrado bilineal durante el movimiento; conserva rayos primarios, intersecciones, texturas, iluminación y sombras, y recupera reflexión/refracción con resolución completa tras 120 ms de reposo real;
+- pospone el refinado mientras el botón derecho o una tecla de cámara sigan pulsados, evitando que un render completo bloquee controles a mitad de un gesto;
+- mantiene dos niveles de rayos secundarios en la ventana interactiva y reserva los cuatro niveles de `MAX_DEPTH` para las capturas de `--render-once`;
+- limita los saltos máximos del ratón y calcula la órbita de teclado según el tiempo transcurrido para evitar movimientos bruscos cuando un render tarda más de lo normal;
 - dibuja la interfaz después del escalado para mantener el texto nítido;
 - utiliza como máximo ocho workers;
+- termina cada consulta de sombra al encontrar el primer obstáculo, sin alterar la imagen;
 - descarta rayos con aporte final igual o menor al 5%;
 - carga las texturas en RGB8 una sola vez;
 - limita la órbita para evitar atravesar paredes;
 - conserva el bucle de interfaz a 30 Hz cuando no hay un render activo.
-
-## Validación
-
-```bash
-cargo fmt --all -- --check
-cargo test --all-targets
-cargo clippy --all-targets -- -D warnings
-cargo build --release
-```

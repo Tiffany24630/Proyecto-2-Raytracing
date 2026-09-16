@@ -1,4 +1,5 @@
 mod animation;
+mod audio;
 mod game;
 mod geometry;
 mod interaction;
@@ -13,11 +14,13 @@ use std::time::{Duration, Instant};
 
 use animation::{MemoryTimeline, SceneTransition};
 use game::{
-    AnimationState, ControlMode, GameEvent, GameState, NarrativeController, SceneState, SkyState,
+    AnimationState, ControlMode, ExhibitionId, GameEvent, GameState, NarrativeController,
+    SceneState, SkyState, TransitionDestination,
 };
 use interaction::{
-    CAMERA_TOLERANCE, EyeOfGod, POSITION_TOLERANCE, PerspectiveStatus, Puzzle, ROTATION_TOLERANCE,
-    check_perspective,
+    AcademyChallenge, AcademyPhase, AcademyTarget, CAMERA_TOLERANCE, DesertChallenge, DesertPhase,
+    EyeOfGod, LibraryChallenge, LibraryPhase, POSITION_TOLERANCE, PerspectiveStatus, Puzzle,
+    ROTATION_TOLERANCE, academy_target_at, check_perspective, exhibition_at, library_page_at,
 };
 use interface::{UiState, draw_interface, draw_narrative, draw_world_label};
 use materials::TextureSet;
@@ -25,28 +28,36 @@ use math::Vec3;
 use minifb::{Key, KeyRepeat, MouseButton, MouseMode, Scale, ScaleMode, Window, WindowOptions};
 use raytracing::{Camera, Renderer};
 use world::{
-    PortalView, PuzzleLayout, PuzzlePieceId, Scene, add_melanta_event, build_temple,
+    PortalView, PuzzleLayout, PuzzlePieceId, Scene, add_melanta_event, add_nihilita_epilogue,
+    build_academy_room, build_desert_room_with_seal, build_library_room, build_temple,
     build_temple_interactive, melanta_light, melanta_transition_light, temple_skybox,
 };
 
 const IMAGE_WIDTH: usize = 576;
 const IMAGE_HEIGHT: usize = 324;
-const PREVIEW_WIDTH: usize = 352;
-const PREVIEW_HEIGHT: usize = 198;
+const PREVIEW_WIDTH: usize = 400;
+const PREVIEW_HEIGHT: usize = 225;
+const INTERACTIVE_MAX_DEPTH: u32 = 2;
 const ASPECT_RATIO: f32 = IMAGE_WIDTH as f32 / IMAGE_HEIGHT as f32;
+#[cfg(test)]
 const ORBIT_STEP: f32 = 5.0_f32.to_radians();
+const CAMERA_ORBIT_SPEED: f32 = 1.05;
+const MAX_INPUT_DELTA_SECONDS: f32 = 0.05;
 const OBJECT_ROTATION_STEP: f32 = 15.0_f32.to_radians();
 const OBJECT_MOVE_STEP: f32 = 0.18;
 const ZOOM_STEP: f32 = 0.4;
-const MOUSE_ORBIT_SENSITIVITY: f32 = 0.004;
+const MOUSE_ORBIT_SENSITIVITY: f32 = 0.003;
+const MAX_MOUSE_ORBIT_DELTA: f32 = 4.0_f32.to_radians();
 const MOUSE_WHEEL_ZOOM_STEP: f32 = 0.35;
 const SKY_TRANSITION_SECONDS: f32 = 3.0;
 const MELANTA_REVEAL_DELAY_SECONDS: f32 = 2.0;
 const PORTAL_TRANSITION_SECONDS: f32 = 2.4;
 const UI_TARGET_FPS: usize = 30;
-const FULL_QUALITY_DELAY: Duration = Duration::from_millis(60);
+const FULL_QUALITY_DELAY: Duration = Duration::from_millis(120);
 
 fn main() -> Result<(), Box<dyn Error>> {
+    let audio_config = audio::AudioConfig::discover();
+    let _background_music = audio_config.background_music();
     let temple = build_temple();
     let named_groups = temple
         .objects
@@ -100,9 +111,26 @@ fn render_checkpoint_views(
         ("temple", SceneState::Temple, 1.0, interior),
         ("temple_side", SceneState::Temple, 1.0, interior_side),
         ("temple_back", SceneState::Temple, 1.0, interior_back),
-        ("puzzle", SceneState::Puzzle, 1.0, interior),
         ("memory_restored", SceneState::MemoryRestored, 1.0, interior),
         ("melanta", SceneState::Melanta, 1.0, interior),
+        (
+            "desert_pavilion",
+            SceneState::DesertPavilion,
+            1.0,
+            PortalView::DesertPavilion.camera(ASPECT_RATIO),
+        ),
+        (
+            "mahavaipulya_chamber",
+            SceneState::MahavaipulyaChamber,
+            1.0,
+            PortalView::MahavaipulyaChamber.camera(ASPECT_RATIO),
+        ),
+        (
+            "luyang_academy",
+            SceneState::LuyangAcademy,
+            1.0,
+            PortalView::LuyangAcademy.camera(ASPECT_RATIO),
+        ),
         ("final", SceneState::Final, 1.0, interior),
     ] {
         let transition = SceneTransition::at(PORTAL_TRANSITION_SECONDS, progress);
@@ -143,7 +171,17 @@ fn render_checkpoint(
     if state == SceneState::Puzzle {
         eye.toggle();
     }
-    let scene = build_game_scene(game, puzzle, timeline);
+    let desert_challenge = DesertChallenge::default();
+    let library_challenge = LibraryChallenge::default();
+    let academy_challenge = AcademyChallenge::default();
+    let scene = build_game_scene(
+        game,
+        puzzle,
+        timeline,
+        desert_challenge,
+        library_challenge,
+        academy_challenge,
+    );
     let sky_corruption = if state == SceneState::Melanta {
         1.0
     } else {
@@ -159,6 +197,9 @@ fn render_checkpoint(
         timeline,
         sky_corruption,
         camera,
+        desert_challenge,
+        library_challenge,
+        academy_challenge,
     );
     draw_narrative(
         &mut pixels,
@@ -171,7 +212,7 @@ fn render_checkpoint(
         state,
         PerspectiveStatus::from(puzzle, check_perspective(camera, ASPECT_RATIO)),
     );
-    apply_fade(&mut pixels, transition.fade_opacity());
+    apply_white_fade(&mut pixels, transition.white_opacity());
     let output_path = format!("output/showcase_{name}.bmp");
     renderer.write_bmp(&output_path, &pixels)?;
     let sky: SkyState = state.sky();
@@ -195,23 +236,37 @@ fn run_interactive(
     renderer: &Renderer,
     textures: &TextureSet,
 ) -> Result<(), Box<dyn Error>> {
+    let interactive_renderer =
+        Renderer::new(IMAGE_WIDTH, IMAGE_HEIGHT, Vec3::new(0.20, 0.31, 0.54))
+            .with_max_depth(INTERACTIVE_MAX_DEPTH);
     let preview_renderer =
-        Renderer::new(PREVIEW_WIDTH, PREVIEW_HEIGHT, Vec3::new(0.20, 0.31, 0.54)).with_max_depth(1);
+        Renderer::new(PREVIEW_WIDTH, PREVIEW_HEIGHT, Vec3::new(0.20, 0.31, 0.54)).with_max_depth(0);
     let mut game = GameState::default();
     let mut eye = EyeOfGod::default();
     let mut puzzle = Puzzle::default();
     let mut timeline = MemoryTimeline::default();
+    let mut desert_challenge = DesertChallenge::default();
+    let mut library_challenge = LibraryChallenge::default();
+    let mut academy_challenge = AcademyChallenge::default();
     let mut portal_transition = SceneTransition::new(PORTAL_TRANSITION_SECONDS);
     let mut narrative = NarrativeController::default();
     let mut portal_start_camera = camera;
-    let portal_end_camera = PortalView::Interior.camera(ASPECT_RATIO);
+    let mut portal_end_camera = PortalView::Interior.camera(ASPECT_RATIO);
+    let mut transition_scene_swapped = true;
     let mut sky_corruption = 0.0_f32;
     let mut memory_restored_hold = 0.0_f32;
     let mut previous_orbit_mouse = None;
     let mut left_mouse_was_down = false;
     let mut refine_at = None;
     let mut last_tick = Instant::now();
-    let mut scene = build_game_scene(game, puzzle, timeline);
+    let mut scene = build_game_scene(
+        game,
+        puzzle,
+        timeline,
+        desert_challenge,
+        library_challenge,
+        academy_challenge,
+    );
     let initial_title = window_title(game, sky_corruption, &camera);
     let mut window = Window::new(
         &initial_title,
@@ -226,14 +281,15 @@ fn run_interactive(
     )?;
     window.set_target_fps(UI_TARGET_FPS);
 
-    let mut pixels = render_scene(
-        renderer,
+    let mut cached_scene_pixels = render_scene(
+        &interactive_renderer,
         &camera,
         &scene,
         textures,
         game.scene(),
         sky_corruption,
     );
+    let mut pixels = cached_scene_pixels.clone();
     draw_scene_labels(&mut pixels, game.scene(), &camera);
     draw_game_interface(
         &mut pixels,
@@ -243,6 +299,9 @@ fn run_interactive(
         timeline,
         sky_corruption,
         &camera,
+        desert_challenge,
+        library_challenge,
+        academy_challenge,
     );
     draw_narrative(&mut pixels, IMAGE_WIDTH, IMAGE_HEIGHT, narrative.message());
     draw_state_indicator(
@@ -259,6 +318,7 @@ fn run_interactive(
         let mut changed = false;
         let mut scene_changed = false;
         let mut prefer_preview = false;
+        let mut force_full_render = false;
 
         if window.is_key_pressed(Key::Escape, KeyRepeat::No) {
             match handle_escape(&mut game, &mut eye, &mut puzzle) {
@@ -269,19 +329,13 @@ fn run_interactive(
                 EscapeAction::Exit => break,
             }
         }
-        if window.is_key_pressed(Key::Tab, KeyRepeat::No) && game.handle(GameEvent::TogglePuzzle) {
-            if game.scene() == SceneState::Puzzle {
-                if !eye.is_active() {
-                    eye.toggle();
-                }
-            } else {
-                puzzle.cancel();
-                if eye.is_active() {
-                    eye.toggle();
-                }
-            }
+        if game.scene() == SceneState::Temple
+            && !eye.is_active()
+            && window.is_key_pressed(Key::Tab, KeyRepeat::No)
+            && game.handle(GameEvent::ActivateEyeOfGod)
+        {
+            eye.toggle();
             changed = true;
-            scene_changed = true;
         }
         if game.scene() == SceneState::Temple && window.is_key_pressed(Key::M, KeyRepeat::No) {
             game = GameState::from_scene(SceneState::Melanta);
@@ -290,22 +344,47 @@ fn run_interactive(
             scene_changed = true;
         }
         let left_mouse_down = window.get_mouse_down(MouseButton::Left);
-        let puzzle_clicked =
-            game.scene() == SceneState::Puzzle && left_mouse_down && !left_mouse_was_down;
+        let scene_clicked = left_mouse_down && !left_mouse_was_down;
         left_mouse_was_down = left_mouse_down;
-        if window.is_key_pressed(Key::E, KeyRepeat::No) || puzzle_clicked {
+        let interact_pressed = window.is_key_pressed(Key::E, KeyRepeat::No);
+        if interact_pressed || scene_clicked {
             match game.scene() {
                 SceneState::Exterior => {
-                    if game.handle(GameEvent::UsePortal) {
+                    if interact_pressed && game.handle(GameEvent::UsePortal) {
                         println!("State: {}", game.scene().label());
                         portal_start_camera = camera;
+                        portal_end_camera = PortalView::Interior.camera(ASPECT_RATIO);
                         portal_transition.restart();
+                        transition_scene_swapped = false;
                         changed = true;
-                        scene_changed = true;
                     }
                 }
                 SceneState::Temple => {
-                    if game.handle(GameEvent::UsePortal) {
+                    let (u, v) = mouse_uv(&window);
+                    let exhibition = exhibition_at(&camera, &scene.objects, u, v);
+                    if let Some(exhibition) = exhibition {
+                        let destination_view = match exhibition {
+                            ExhibitionId::DesertPavilion => Some(PortalView::DesertPavilion),
+                            ExhibitionId::MahavaipulyaChamber => {
+                                Some(PortalView::MahavaipulyaChamber)
+                            }
+                            ExhibitionId::LuyangAcademy => Some(PortalView::LuyangAcademy),
+                        };
+                        if let Some(destination_view) = destination_view
+                            && game.handle(GameEvent::EnterExhibition(exhibition))
+                        {
+                            match exhibition {
+                                ExhibitionId::DesertPavilion => desert_challenge.restart(),
+                                ExhibitionId::MahavaipulyaChamber => library_challenge.restart(),
+                                ExhibitionId::LuyangAcademy => academy_challenge.restart(),
+                            }
+                            portal_start_camera = camera;
+                            portal_end_camera = destination_view.camera(ASPECT_RATIO);
+                            portal_transition.restart();
+                            transition_scene_swapped = false;
+                            changed = true;
+                        }
+                    } else if interact_pressed && game.handle(GameEvent::UsePortal) {
                         camera = PortalView::Exterior.camera(ASPECT_RATIO);
                         changed = true;
                         scene_changed = true;
@@ -319,6 +398,97 @@ fn run_interactive(
                         scene_changed = true;
                     }
                 }
+                SceneState::DesertPavilion => {
+                    let interaction_changed = match desert_challenge.phase() {
+                        DesertPhase::AccessSeal => desert_challenge.confirm_seal(),
+                        DesertPhase::Defeated => {
+                            desert_challenge.restart();
+                            true
+                        }
+                        DesertPhase::Complete => {
+                            game.complete_exhibition(ExhibitionId::DesertPavilion);
+                            if game.handle(GameEvent::LeaveExhibition) {
+                                portal_start_camera = camera;
+                                portal_end_camera = PortalView::Interior.camera(ASPECT_RATIO);
+                                portal_transition.restart();
+                                transition_scene_swapped = false;
+                            }
+                            true
+                        }
+                        _ => false,
+                    };
+                    if interaction_changed {
+                        changed = true;
+                        scene_changed = game.scene() == SceneState::DesertPavilion;
+                    }
+                }
+                SceneState::MahavaipulyaChamber => {
+                    let (u, v) = mouse_uv(&window);
+                    if let Some(page) = library_page_at(&camera, &scene.objects, u, v) {
+                        if library_challenge.collect(page) {
+                            changed = true;
+                            scene_changed = true;
+                        }
+                    } else {
+                        match library_challenge.phase() {
+                            LibraryPhase::Complete => {
+                                game.complete_exhibition(ExhibitionId::MahavaipulyaChamber);
+                                if game.handle(GameEvent::LeaveExhibition) {
+                                    portal_start_camera = camera;
+                                    portal_end_camera = PortalView::Interior.camera(ASPECT_RATIO);
+                                    portal_transition.restart();
+                                    transition_scene_swapped = false;
+                                    changed = true;
+                                }
+                            }
+                            LibraryPhase::Defeated => {
+                                library_challenge.restart();
+                                changed = true;
+                                scene_changed = true;
+                            }
+                            LibraryPhase::Collecting => {}
+                        }
+                    }
+                }
+                SceneState::LuyangAcademy => {
+                    match academy_challenge.phase() {
+                        AcademyPhase::Complete => {
+                            game.complete_exhibition(ExhibitionId::LuyangAcademy);
+                            if game.handle(GameEvent::LeaveExhibition) {
+                                portal_start_camera = camera;
+                                portal_end_camera = PortalView::Interior.camera(ASPECT_RATIO);
+                                portal_transition.restart();
+                                transition_scene_swapped = false;
+                                changed = true;
+                            }
+                        }
+                        AcademyPhase::Defeated => {
+                            academy_challenge.restart();
+                            changed = true;
+                            scene_changed = true;
+                        }
+                        AcademyPhase::Arranging => {
+                            let (u, v) = mouse_uv(&window);
+                            match academy_target_at(&camera, &scene.objects, u, v) {
+                                Some(AcademyTarget::Fragment(fragment)) => {
+                                    if academy_challenge.select(fragment) {
+                                        changed = true;
+                                        scene_changed = true;
+                                    }
+                                }
+                                Some(AcademyTarget::ConfirmButton)
+                                    if academy_challenge.confirm() =>
+                                {
+                                    changed = true;
+                                    scene_changed = true;
+                                }
+                                Some(AcademyTarget::ConfirmButton) => {}
+                                None => {}
+                            }
+                        }
+                    }
+                }
+                SceneState::Final if interact_pressed => break,
                 _ => {}
             }
         }
@@ -330,11 +500,45 @@ fn run_interactive(
             );
             changed = true;
             prefer_preview = true;
+            if !transition_scene_swapped && portal_transition.progress() >= 0.5 {
+                transition_scene_swapped = true;
+                scene_changed = true;
+            }
             if portal_transition.is_finished() && game.handle(GameEvent::TransitionComplete) {
                 camera = portal_end_camera;
                 scene_changed = true;
             }
         }
+        if matches!(
+            game.scene(),
+            SceneState::DesertPavilion
+                | SceneState::MahavaipulyaChamber
+                | SceneState::LuyangAcademy
+        ) && window.is_key_pressed(Key::B, KeyRepeat::No)
+            && game.handle(GameEvent::LeaveExhibition)
+        {
+            portal_start_camera = camera;
+            portal_end_camera = PortalView::Interior.camera(ASPECT_RATIO);
+            portal_transition.restart();
+            transition_scene_swapped = false;
+            changed = true;
+        }
+        if game.scene() == SceneState::DesertPavilion
+            && window.is_key_pressed(Key::R, KeyRepeat::No)
+            && desert_challenge.rotate_seal()
+        {
+            changed = true;
+            scene_changed = true;
+        }
+        if game.scene() == SceneState::LuyangAcademy
+            && window.is_key_pressed(Key::R, KeyRepeat::No)
+            && academy_challenge.move_selected_right()
+        {
+            changed = true;
+            scene_changed = true;
+        }
+        let camera_pose_before_input = (camera.yaw(), camera.pitch(), camera.radius());
+        let orbit_step = camera_orbit_step(delta_seconds);
         let camera_enabled = game.scene().controls() != ControlMode::Locked;
         let mouse_position = window.get_mouse_pos(MouseMode::Clamp);
         if camera_enabled && window.get_mouse_down(MouseButton::Right) {
@@ -359,22 +563,22 @@ fn run_interactive(
             prefer_preview = true;
         }
         if camera_enabled && key_held(&window, Key::A) {
-            camera.orbit(-ORBIT_STEP, 0.0);
+            camera.orbit(-orbit_step, 0.0);
             changed = true;
             prefer_preview = true;
         }
         if camera_enabled && key_held(&window, Key::D) {
-            camera.orbit(ORBIT_STEP, 0.0);
+            camera.orbit(orbit_step, 0.0);
             changed = true;
             prefer_preview = true;
         }
         if camera_enabled && key_held(&window, Key::W) {
-            camera.orbit(0.0, ORBIT_STEP);
+            camera.orbit(0.0, orbit_step);
             changed = true;
             prefer_preview = true;
         }
         if camera_enabled && key_held(&window, Key::S) {
-            camera.orbit(0.0, -ORBIT_STEP);
+            camera.orbit(0.0, -orbit_step);
             changed = true;
             prefer_preview = true;
         }
@@ -403,22 +607,22 @@ fn run_interactive(
             }
         } else {
             if camera_enabled && key_held(&window, Key::Left) {
-                camera.orbit(-ORBIT_STEP, 0.0);
+                camera.orbit(-orbit_step, 0.0);
                 changed = true;
                 prefer_preview = true;
             }
             if camera_enabled && key_held(&window, Key::Right) {
-                camera.orbit(ORBIT_STEP, 0.0);
+                camera.orbit(orbit_step, 0.0);
                 changed = true;
                 prefer_preview = true;
             }
             if camera_enabled && key_held(&window, Key::Up) {
-                camera.orbit(0.0, ORBIT_STEP);
+                camera.orbit(0.0, orbit_step);
                 changed = true;
                 prefer_preview = true;
             }
             if camera_enabled && key_held(&window, Key::Down) {
-                camera.orbit(0.0, -ORBIT_STEP);
+                camera.orbit(0.0, -orbit_step);
                 changed = true;
                 prefer_preview = true;
             }
@@ -433,6 +637,25 @@ fn run_interactive(
             camera.zoom(ZOOM_STEP);
             changed = true;
             prefer_preview = true;
+        }
+
+        let camera_moved =
+            camera_pose_before_input != (camera.yaw(), camera.pitch(), camera.radius());
+        if game.scene() == SceneState::DesertPavilion
+            && desert_challenge.update(delta_seconds, camera_moved)
+        {
+            changed = true;
+            scene_changed = true;
+        }
+        if game.scene() == SceneState::MahavaipulyaChamber {
+            let update = library_challenge.update(delta_seconds);
+            if update.ui_changed {
+                changed = true;
+            }
+            if update.visual_changed {
+                changed = true;
+                scene_changed = true;
+            }
         }
 
         let perspective = check_perspective(&camera, ASPECT_RATIO);
@@ -494,42 +717,76 @@ fn run_interactive(
         }
 
         if scene_changed {
-            scene = build_game_scene(game, puzzle, timeline);
+            scene = build_game_scene(
+                game,
+                puzzle,
+                timeline,
+                desert_challenge,
+                library_challenge,
+                academy_challenge,
+            );
         }
 
-        if !changed && refine_at.is_some_and(|deadline| Instant::now() >= deadline) {
+        let camera_input_active = camera_enabled
+            && (window.get_mouse_down(MouseButton::Right)
+                || key_held(&window, Key::A)
+                || key_held(&window, Key::D)
+                || key_held(&window, Key::W)
+                || key_held(&window, Key::S)
+                || key_held(&window, Key::Left)
+                || key_held(&window, Key::Right)
+                || key_held(&window, Key::Up)
+                || key_held(&window, Key::Down)
+                || key_held(&window, Key::Equal)
+                || key_held(&window, Key::NumPadPlus)
+                || key_held(&window, Key::Minus)
+                || key_held(&window, Key::NumPadMinus));
+        if camera_input_active && refine_at.is_some() {
+            refine_at = Some(Instant::now() + FULL_QUALITY_DELAY);
+        }
+        let refinement_due = refine_at.is_some_and(|deadline| Instant::now() >= deadline);
+        if should_refine(changed, camera_input_active, refinement_due) {
             changed = true;
             refine_at = None;
+            force_full_render = true;
         }
 
         if changed {
-            let mut pixels = if prefer_preview {
-                let preview = render_scene(
-                    &preview_renderer,
-                    &camera,
-                    &scene,
-                    textures,
-                    game.scene(),
-                    sky_corruption,
-                );
-                refine_at = Some(Instant::now() + FULL_QUALITY_DELAY);
-                upscale_bilinear(
-                    &preview,
-                    PREVIEW_WIDTH,
-                    PREVIEW_HEIGHT,
-                    IMAGE_WIDTH,
-                    IMAGE_HEIGHT,
-                )
+            let raytrace_required =
+                needs_raytrace(prefer_preview, scene_changed, force_full_render);
+            let mut pixels = if raytrace_required {
+                let rendered = if prefer_preview {
+                    let preview = render_scene(
+                        &preview_renderer,
+                        &camera,
+                        &scene,
+                        textures,
+                        game.scene(),
+                        sky_corruption,
+                    );
+                    refine_at = Some(Instant::now() + FULL_QUALITY_DELAY);
+                    upscale_bilinear(
+                        &preview,
+                        PREVIEW_WIDTH,
+                        PREVIEW_HEIGHT,
+                        IMAGE_WIDTH,
+                        IMAGE_HEIGHT,
+                    )
+                } else {
+                    refine_at = None;
+                    render_scene(
+                        &interactive_renderer,
+                        &camera,
+                        &scene,
+                        textures,
+                        game.scene(),
+                        sky_corruption,
+                    )
+                };
+                cached_scene_pixels = rendered.clone();
+                rendered
             } else {
-                refine_at = None;
-                render_scene(
-                    renderer,
-                    &camera,
-                    &scene,
-                    textures,
-                    game.scene(),
-                    sky_corruption,
-                )
+                cached_scene_pixels.clone()
             };
             draw_scene_labels(&mut pixels, game.scene(), &camera);
             draw_game_interface(
@@ -540,6 +797,9 @@ fn run_interactive(
                 timeline,
                 sky_corruption,
                 &camera,
+                desert_challenge,
+                library_challenge,
+                academy_challenge,
             );
             draw_narrative(&mut pixels, IMAGE_WIDTH, IMAGE_HEIGHT, narrative.message());
             draw_state_indicator(
@@ -547,7 +807,7 @@ fn run_interactive(
                 game.scene(),
                 PerspectiveStatus::from(puzzle, perspective),
             );
-            apply_fade(&mut pixels, portal_transition.fade_opacity());
+            apply_white_fade(&mut pixels, portal_transition.white_opacity());
             buffer = renderer.to_u32_buffer(&pixels);
             window.set_title(&window_title(game, sky_corruption, &camera));
         }
@@ -562,11 +822,25 @@ fn key_held(window: &Window, key: Key) -> bool {
     window.is_key_down(key)
 }
 
+fn needs_raytrace(camera_or_preview_changed: bool, scene_changed: bool, refine: bool) -> bool {
+    camera_or_preview_changed || scene_changed || refine
+}
+
+fn should_refine(changed: bool, camera_input_active: bool, refinement_due: bool) -> bool {
+    !changed && !camera_input_active && refinement_due
+}
+
 fn mouse_orbit_delta(previous: (f32, f32), current: (f32, f32)) -> (f32, f32) {
     (
-        -(current.0 - previous.0) * MOUSE_ORBIT_SENSITIVITY,
-        -(current.1 - previous.1) * MOUSE_ORBIT_SENSITIVITY,
+        (-(current.0 - previous.0) * MOUSE_ORBIT_SENSITIVITY)
+            .clamp(-MAX_MOUSE_ORBIT_DELTA, MAX_MOUSE_ORBIT_DELTA),
+        (-(current.1 - previous.1) * MOUSE_ORBIT_SENSITIVITY)
+            .clamp(-MAX_MOUSE_ORBIT_DELTA, MAX_MOUSE_ORBIT_DELTA),
     )
+}
+
+fn camera_orbit_step(delta_seconds: f32) -> f32 {
+    CAMERA_ORBIT_SPEED * delta_seconds.clamp(0.0, MAX_INPUT_DELTA_SECONDS)
 }
 
 fn upscale_bilinear(
@@ -650,9 +924,67 @@ fn handle_escape(game: &mut GameState, eye: &mut EyeOfGod, puzzle: &mut Puzzle) 
     }
 }
 
-fn build_game_scene(game: GameState, puzzle: Puzzle, timeline: MemoryTimeline) -> Scene {
+fn build_game_scene(
+    game: GameState,
+    puzzle: Puzzle,
+    timeline: MemoryTimeline,
+    desert_challenge: DesertChallenge,
+    library_challenge: LibraryChallenge,
+    academy_challenge: AcademyChallenge,
+) -> Scene {
     let state = game.scene();
-    let mut scene = if state == SceneState::MemoryRestored {
+    if state == SceneState::DesertPavilion
+        || (state == SceneState::Entering
+            && game.transition_destination()
+                == TransitionDestination::Exhibition(ExhibitionId::DesertPavilion))
+    {
+        let mut scene = build_desert_room_with_seal(desert_challenge.seal_yaw());
+        if desert_challenge.melanta_visible() {
+            add_melanta_event(&mut scene.objects);
+            scene.light = melanta_light();
+        }
+        return scene;
+    }
+    if state == SceneState::LuyangAcademy
+        || (state == SceneState::Entering
+            && game.transition_destination()
+                == TransitionDestination::Exhibition(ExhibitionId::LuyangAcademy))
+    {
+        let mut scene = build_academy_room(academy_challenge.order(), academy_challenge.selected());
+        if academy_challenge.phase() == AcademyPhase::Defeated {
+            add_melanta_event(&mut scene.objects);
+            scene.light = melanta_light();
+        }
+        return scene;
+    }
+    if state == SceneState::MahavaipulyaChamber
+        || (state == SceneState::Entering
+            && game.transition_destination()
+                == TransitionDestination::Exhibition(ExhibitionId::MahavaipulyaChamber))
+    {
+        let collected = [
+            library_challenge.page_collected(0),
+            library_challenge.page_collected(1),
+            library_challenge.page_collected(2),
+        ];
+        let mut scene = build_library_room(collected, library_challenge.corruption());
+        if library_challenge.phase() == LibraryPhase::Defeated {
+            add_melanta_event(&mut scene.objects);
+        }
+        return scene;
+    }
+    let visual_state = if state == SceneState::Entering
+        && game.transition_destination() == TransitionDestination::Temple
+    {
+        if game.exhibitions().all_completed() {
+            SceneState::Final
+        } else {
+            SceneState::Temple
+        }
+    } else {
+        state
+    };
+    let mut scene = if visual_state == SceneState::MemoryRestored {
         let sample = timeline.sample();
         let mut scene =
             build_temple_interactive(sample.memory_state, sample.core_pose, false, sample.puzzle);
@@ -660,7 +992,7 @@ fn build_game_scene(game: GameState, puzzle: Puzzle, timeline: MemoryTimeline) -
         scene
     } else {
         build_temple_interactive(
-            state.memory_core(),
+            visual_state.memory_core(),
             world::MemoryCorePose::default(),
             false,
             puzzle.layout(),
@@ -668,10 +1000,12 @@ fn build_game_scene(game: GameState, puzzle: Puzzle, timeline: MemoryTimeline) -
     };
     scene
         .objects
-        .retain(|object| state.object_visible(object.name()));
-    if state == SceneState::Melanta {
+        .retain(|object| visual_state.object_visible(object.name()));
+    if visual_state == SceneState::Melanta {
         add_melanta_event(&mut scene.objects);
         scene.light = melanta_light();
+    } else if visual_state == SceneState::Final {
+        add_nihilita_epilogue(&mut scene.objects);
     }
     scene
 }
@@ -707,13 +1041,14 @@ fn render_scene(
     }
 }
 
-fn apply_fade(pixels: &mut [Vec3], opacity: f32) {
-    let visible = 1.0 - opacity.clamp(0.0, 1.0);
+fn apply_white_fade(pixels: &mut [Vec3], opacity: f32) {
+    let opacity = opacity.clamp(0.0, 1.0);
     for pixel in pixels {
-        *pixel = *pixel * visible;
+        *pixel = *pixel * (1.0 - opacity) + Vec3::new(1.0, 1.0, 1.0) * opacity;
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn draw_game_interface(
     pixels: &mut [Vec3],
     game: GameState,
@@ -722,8 +1057,12 @@ fn draw_game_interface(
     timeline: MemoryTimeline,
     sky_corruption: f32,
     camera: &Camera,
+    desert_challenge: DesertChallenge,
+    library_challenge: LibraryChallenge,
+    academy_challenge: AcademyChallenge,
 ) {
     let perspective = check_perspective(camera, ASPECT_RATIO);
+    let exhibition_progress = game.exhibitions();
     let interaction_hint = if puzzle.pieces_aligned() && puzzle.selected().is_none() {
         perspective.guidance.label()
     } else {
@@ -746,6 +1085,18 @@ fn draw_game_interface(
             timeline: timeline.value(),
             timeline_playing: timeline.is_playing(),
             sky_corruption,
+            desert_lives: desert_challenge.lives(),
+            desert_watches: desert_challenge.survived_watches(),
+            desert_status: desert_challenge.status(),
+            library_pages: library_challenge.collected_count(),
+            library_seconds: library_challenge.remaining_display(),
+            library_status: library_challenge.status(),
+            academy_selected: academy_challenge.selected_label(),
+            academy_status: academy_challenge.status(),
+            academy_order: academy_challenge.order(),
+            hub_unlocked: exhibition_progress.hub_unlocked(),
+            exhibitions_completed: exhibition_progress.completed_count(),
+            all_exhibitions_completed: exhibition_progress.all_completed(),
         },
     );
 }
@@ -763,6 +1114,18 @@ fn draw_scene_labels(pixels: &mut [Vec3], state: SceneState, camera: &Camera) {
         );
         return;
     }
+    if state == SceneState::Final {
+        draw_world_label(
+            pixels,
+            IMAGE_WIDTH,
+            IMAGE_HEIGHT,
+            camera,
+            Vec3::new(2.65, 2.95, -2.85),
+            "NIHILITA - GUARDIANA DE LA MEMORIA",
+            Vec3::new(0.42, 0.94, 1.0),
+        );
+        return;
+    }
     if state == SceneState::Melanta {
         draw_world_label(
             pixels,
@@ -775,23 +1138,31 @@ fn draw_scene_labels(pixels: &mut [Vec3], state: SceneState, camera: &Camera) {
         );
         return;
     }
+    if matches!(
+        state,
+        SceneState::DesertPavilion
+            | SceneState::MahavaipulyaChamber
+            | SceneState::LuyangAcademy
+    ) {
+        return;
+    }
     if state != SceneState::Temple {
         return;
     }
     for (position, text, color) in [
         (
             Vec3::new(-6.2, 3.48, -4.1),
-            "LUYANG - ARTE",
+            "LUYANG - ARTE - CLICK/E",
             Vec3::new(1.0, 0.62, 0.30),
         ),
         (
             Vec3::new(6.2, 3.32, -4.1),
-            "MAHAVAIPULYA - TEXTOS",
+            "MAHAVAIPULYA - TEXTOS - CLICK/E",
             Vec3::new(0.48, 0.88, 1.0),
         ),
         (
             Vec3::new(-6.2, 3.36, 3.8),
-            "DESERT PAVILION",
+            "DESERT PAVILION - CLICK/E",
             Vec3::new(1.0, 0.78, 0.30),
         ),
         (
@@ -872,10 +1243,11 @@ fn window_title(game: GameState, sky_corruption: f32, camera: &Camera) -> String
 #[cfg(test)]
 mod app_tests {
     use super::{
-        ASPECT_RATIO, EscapeAction, IMAGE_HEIGHT, IMAGE_WIDTH, MELANTA_REVEAL_DELAY_SECONDS,
-        OBJECT_MOVE_STEP, OBJECT_ROTATION_STEP, ORBIT_STEP, PREVIEW_HEIGHT, PREVIEW_WIDTH,
-        ZOOM_STEP, handle_escape, mouse_orbit_delta, try_begin_melanta, try_complete_puzzle,
-        upscale_bilinear,
+        ASPECT_RATIO, EscapeAction, IMAGE_HEIGHT, IMAGE_WIDTH, INTERACTIVE_MAX_DEPTH,
+        MELANTA_REVEAL_DELAY_SECONDS, MAX_MOUSE_ORBIT_DELTA, OBJECT_MOVE_STEP,
+        OBJECT_ROTATION_STEP, ORBIT_STEP, PREVIEW_HEIGHT, PREVIEW_WIDTH, ZOOM_STEP,
+        build_game_scene, camera_orbit_step, handle_escape, mouse_orbit_delta, needs_raytrace,
+        should_refine, try_begin_melanta, try_complete_puzzle, upscale_bilinear,
     };
 
     #[test]
@@ -889,6 +1261,18 @@ mod app_tests {
         let (yaw, pitch) = mouse_orbit_delta((100.0, 80.0), (125.0, 60.0));
         assert!(yaw < 0.0);
         assert!(pitch > 0.0);
+        let (large_yaw, large_pitch) = mouse_orbit_delta((0.0, 0.0), (1000.0, -1000.0));
+        assert!(large_yaw.abs() <= MAX_MOUSE_ORBIT_DELTA);
+        assert!(large_pitch.abs() <= MAX_MOUSE_ORBIT_DELTA);
+    }
+
+    #[test]
+    fn keyboard_orbit_is_time_based_and_caps_stalled_frames() {
+        let normal_step = camera_orbit_step(1.0 / 30.0);
+        let stalled_step = camera_orbit_step(1.0);
+        assert!(normal_step > 0.0);
+        assert!(normal_step < ORBIT_STEP);
+        assert!(stalled_step < ORBIT_STEP);
     }
 
     #[test]
@@ -910,19 +1294,164 @@ mod app_tests {
     }
 
     #[test]
-    fn movement_preview_uses_at_most_thirty_eight_percent_of_full_resolution() {
+    fn movement_preview_uses_about_half_of_full_resolution() {
         let preview_pixels = PREVIEW_WIDTH * PREVIEW_HEIGHT;
         let full_pixels = IMAGE_WIDTH * IMAGE_HEIGHT;
-        assert!(preview_pixels * 100 <= full_pixels * 38);
+        assert!(preview_pixels * 100 >= full_pixels * 48);
+        assert!(preview_pixels * 100 <= full_pixels * 49);
+    }
+
+    #[test]
+    fn interactive_quality_keeps_two_real_secondary_ray_levels() {
+        assert_eq!(INTERACTIVE_MAX_DEPTH, 2);
+    }
+
+    #[test]
+    fn ui_only_timer_ticks_reuse_the_cached_raytrace() {
+        assert!(!needs_raytrace(false, false, false));
+        assert!(needs_raytrace(true, false, false));
+        assert!(needs_raytrace(false, true, false));
+        assert!(needs_raytrace(false, false, true));
+    }
+
+    #[test]
+    fn full_quality_waits_until_camera_controls_are_released() {
+        assert!(!should_refine(false, true, true));
+        assert!(!should_refine(true, false, true));
+        assert!(!should_refine(false, false, false));
+        assert!(should_refine(false, false, true));
     }
 
     use crate::{
         animation::MemoryTimeline,
-        game::{GameState, SceneState},
-        interaction::{EyeOfGod, Puzzle},
+        game::{ExhibitionId, GameEvent, GameState, SceneState},
+        interaction::{
+            AcademyChallenge, DesertChallenge, DesertPhase, EyeOfGod, LibraryChallenge, Puzzle,
+        },
         math::Vec3,
         world::{PortalView, PuzzleLayout, PuzzlePieceId},
     };
+
+    #[test]
+    fn desert_watching_phase_adds_melanta_to_the_raytraced_scene() {
+        let mut challenge = DesertChallenge::default();
+        assert!(challenge.rotate_seal());
+        assert!(challenge.confirm_seal());
+        assert!(challenge.update(10.0, false));
+        assert!(challenge.update(10.0, false));
+        assert_eq!(challenge.phase(), DesertPhase::Watching);
+
+        let scene = build_game_scene(
+            GameState::from_scene(SceneState::DesertPavilion),
+            Puzzle::default(),
+            MemoryTimeline::default(),
+            challenge,
+            LibraryChallenge::default(),
+            AcademyChallenge::default(),
+        );
+        assert!(
+            scene
+                .objects
+                .iter()
+                .any(|object| object.name() == "melanta torso")
+        );
+        assert!(scene.light.color.x > scene.light.color.y * 4.0);
+    }
+
+    #[test]
+    fn wrong_academy_layout_adds_melanta_to_the_gallery() {
+        let mut challenge = AcademyChallenge::default();
+        assert!(challenge.confirm());
+        let scene = build_game_scene(
+            GameState::from_scene(SceneState::LuyangAcademy),
+            Puzzle::default(),
+            MemoryTimeline::default(),
+            DesertChallenge::default(),
+            LibraryChallenge::default(),
+            challenge,
+        );
+
+        assert!(
+            scene
+                .objects
+                .iter()
+                .any(|object| object.name() == "melanta torso")
+        );
+        assert!(scene.light.color.x > scene.light.color.y * 4.0);
+    }
+
+    #[test]
+    fn final_temple_scene_contains_nihilita() {
+        let scene = build_game_scene(
+            GameState::from_scene(SceneState::Final),
+            Puzzle::default(),
+            MemoryTimeline::default(),
+            DesertChallenge::default(),
+            LibraryChallenge::default(),
+            AcademyChallenge::default(),
+        );
+
+        assert!(
+            scene
+                .objects
+                .iter()
+                .any(|object| object.name() == "nihilita head")
+        );
+    }
+
+    #[test]
+    fn portal_midpoint_reveals_only_the_temple_destination() {
+        let mut game = GameState::default();
+        assert!(game.handle(GameEvent::UsePortal));
+        let scene = build_game_scene(
+            game,
+            Puzzle::default(),
+            MemoryTimeline::default(),
+            DesertChallenge::default(),
+            LibraryChallenge::default(),
+            AcademyChallenge::default(),
+        );
+
+        assert!(!scene
+            .objects
+            .iter()
+            .any(|object| object.name().starts_with("exterior ")));
+        assert!(!scene
+            .objects
+            .iter()
+            .any(|object| object.name().starts_with("puzzle piece")));
+        assert!(scene
+            .objects
+            .iter()
+            .any(|object| object.name() == "memory core"));
+    }
+
+    #[test]
+    fn final_return_midpoint_already_reveals_nihilita() {
+        let mut game = GameState::from_scene(SceneState::Temple);
+        assert!(game.handle(GameEvent::ActivateEyeOfGod));
+        assert!(game.complete_exhibition(ExhibitionId::DesertPavilion));
+        assert!(game.complete_exhibition(ExhibitionId::MahavaipulyaChamber));
+        assert!(game.handle(GameEvent::EnterExhibition(
+            ExhibitionId::LuyangAcademy
+        )));
+        assert!(game.handle(GameEvent::TransitionComplete));
+        assert!(game.complete_exhibition(ExhibitionId::LuyangAcademy));
+        assert!(game.handle(GameEvent::LeaveExhibition));
+
+        let scene = build_game_scene(
+            game,
+            Puzzle::default(),
+            MemoryTimeline::default(),
+            DesertChallenge::default(),
+            LibraryChallenge::default(),
+            AcademyChallenge::default(),
+        );
+        assert!(scene
+            .objects
+            .iter()
+            .any(|object| object.name() == "nihilita head"));
+    }
 
     #[test]
     fn escape_never_enters_the_puzzle_from_the_temple() {

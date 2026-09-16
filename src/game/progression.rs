@@ -61,6 +61,9 @@ impl GameState {
             }
             (SceneState::Entering, GameEvent::TransitionComplete) => {
                 match self.transition_destination {
+                    TransitionDestination::Temple if self.exhibitions.all_completed() => {
+                        SceneState::Final
+                    }
                     TransitionDestination::Temple => SceneState::Temple,
                     TransitionDestination::Exhibition(ExhibitionId::DesertPavilion) => {
                         SceneState::DesertPavilion
@@ -211,5 +214,91 @@ mod tests {
         assert!(game.handle(GameEvent::LeaveExhibition));
         assert!(game.handle(GameEvent::TransitionComplete));
         assert_eq!(game.scene(), SceneState::Temple);
+    }
+
+    #[test]
+    fn eye_of_god_opens_luyang_without_the_old_perspective_puzzle() {
+        let mut game = GameState::from_scene(SceneState::Temple);
+        assert!(game.handle(GameEvent::ActivateEyeOfGod));
+        assert!(game.handle(GameEvent::EnterExhibition(
+            ExhibitionId::LuyangAcademy
+        )));
+        assert!(game.handle(GameEvent::TransitionComplete));
+        assert_eq!(game.scene(), SceneState::LuyangAcademy);
+        assert!(game.complete_exhibition(ExhibitionId::LuyangAcademy));
+        assert!(game.handle(GameEvent::LeaveExhibition));
+        assert!(game.handle(GameEvent::TransitionComplete));
+        assert_eq!(game.scene(), SceneState::Temple);
+    }
+
+    #[test]
+    fn returning_after_all_three_memories_starts_the_epilogue() {
+        let mut game = GameState::from_scene(SceneState::Temple);
+        assert!(game.handle(GameEvent::ActivateEyeOfGod));
+        assert!(game.complete_exhibition(ExhibitionId::DesertPavilion));
+        assert!(game.complete_exhibition(ExhibitionId::MahavaipulyaChamber));
+        assert!(game.handle(GameEvent::EnterExhibition(
+            ExhibitionId::LuyangAcademy
+        )));
+        assert!(game.handle(GameEvent::TransitionComplete));
+        assert!(game.complete_exhibition(ExhibitionId::LuyangAcademy));
+        assert!(game.handle(GameEvent::LeaveExhibition));
+        assert!(game.handle(GameEvent::TransitionComplete));
+        assert_eq!(game.scene(), SceneState::Final);
+        assert!(game.exhibitions().all_completed());
+    }
+
+    #[test]
+    fn every_exhibition_order_reaches_the_same_final_epilogue() {
+        for order in [
+            [
+                ExhibitionId::DesertPavilion,
+                ExhibitionId::MahavaipulyaChamber,
+                ExhibitionId::LuyangAcademy,
+            ],
+            [
+                ExhibitionId::DesertPavilion,
+                ExhibitionId::LuyangAcademy,
+                ExhibitionId::MahavaipulyaChamber,
+            ],
+            [
+                ExhibitionId::MahavaipulyaChamber,
+                ExhibitionId::DesertPavilion,
+                ExhibitionId::LuyangAcademy,
+            ],
+            [
+                ExhibitionId::MahavaipulyaChamber,
+                ExhibitionId::LuyangAcademy,
+                ExhibitionId::DesertPavilion,
+            ],
+            [
+                ExhibitionId::LuyangAcademy,
+                ExhibitionId::DesertPavilion,
+                ExhibitionId::MahavaipulyaChamber,
+            ],
+            [
+                ExhibitionId::LuyangAcademy,
+                ExhibitionId::MahavaipulyaChamber,
+                ExhibitionId::DesertPavilion,
+            ],
+        ] {
+            let mut game = GameState::from_scene(SceneState::Temple);
+            assert!(game.handle(GameEvent::ActivateEyeOfGod));
+            for (index, exhibition) in order.into_iter().enumerate() {
+                assert!(game.handle(GameEvent::EnterExhibition(exhibition)));
+                assert!(game.handle(GameEvent::TransitionComplete));
+                assert!(game.complete_exhibition(exhibition));
+                assert!(game.handle(GameEvent::LeaveExhibition));
+                assert!(game.handle(GameEvent::TransitionComplete));
+                assert_eq!(
+                    game.scene(),
+                    if index == 2 {
+                        SceneState::Final
+                    } else {
+                        SceneState::Temple
+                    }
+                );
+            }
+        }
     }
 }

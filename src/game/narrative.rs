@@ -120,11 +120,18 @@ fn messages(scene: SceneState) -> &'static [NarrativeMessage] {
             second_line: "ORDENA SUS PARTES ANTES DE CONFIRMAR",
             corrupted: false,
         }],
-        SceneState::Final => &[NarrativeMessage {
-            first_line: "MEMORY RESTORED",
-            second_line: "PRESERVAR TAMBIEN ES ELEGIR",
-            corrupted: false,
-        }],
+        SceneState::Final => &[
+            NarrativeMessage {
+                first_line: "NIHILITA: HAS RESTAURADO LAS TRES MEMORIAS",
+                second_line: "EL TEMPLO YA NO ESTA FRAGMENTADO",
+                corrupted: false,
+            },
+            NarrativeMessage {
+                first_line: "MELANTA COMPRENDIO QUE ASMODAY NO REGRESARA",
+                second_line: "AHORA EL ESPACIO PUEDE DEJAR DE ESPERAR",
+                corrupted: false,
+            },
+        ],
     }
 }
 
@@ -148,5 +155,19 @@ mod tests {
     fn entering_does_not_cover_the_portal_transition() {
         let narrative = NarrativeController::new(SceneState::Entering);
         assert_eq!(narrative.message(), None);
+    }
+
+    #[test]
+    fn epilogue_names_nihilita_and_resolves_melanta() {
+        let mut narrative = NarrativeController::new(SceneState::Final);
+        assert!(narrative
+            .message()
+            .expect("first epilogue page")
+            .first_line
+            .contains("NIHILITA"));
+        assert!(narrative.update(SceneState::Final, 4.0));
+        let ending = narrative.message().expect("second epilogue page");
+        assert!(ending.first_line.contains("MELANTA"));
+        assert!(ending.first_line.contains("ASMODAY"));
     }
 }
