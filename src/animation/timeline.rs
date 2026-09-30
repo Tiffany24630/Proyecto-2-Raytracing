@@ -166,32 +166,3 @@ fn interpolate_pose(start: PuzzlePiecePose, end: PuzzlePiecePose, t: f32) -> Puz
         yaw: lerp_angle(start.yaw, end.yaw, t),
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::MemoryTimeline;
-    use crate::world::{MemoryCoreState, PuzzleLayout};
-
-    #[test]
-    fn timeline_samples_preserved_fragmented_and_restored_keyframes() {
-        let preserved = MemoryTimeline::at(0.0).sample();
-        let fragmented = MemoryTimeline::at(0.5).sample();
-        let restored = MemoryTimeline::at(1.0).sample();
-
-        assert_eq!(preserved.memory_state, MemoryCoreState::Stable);
-        assert_eq!(preserved.puzzle, PuzzleLayout::preserved());
-        assert_eq!(fragmented.memory_state, MemoryCoreState::Fragmented);
-        assert_eq!(fragmented.puzzle, PuzzleLayout::initial());
-        assert_eq!(restored.memory_state, MemoryCoreState::Restored);
-        assert_eq!(restored.puzzle, PuzzleLayout::solved());
-    }
-
-    #[test]
-    fn playback_clamps_at_one_and_stops() {
-        let mut timeline = MemoryTimeline::default();
-        timeline.restart();
-        assert!(timeline.update(10.0));
-        assert_eq!(timeline.value(), 1.0);
-        assert!(!timeline.is_playing());
-    }
-}

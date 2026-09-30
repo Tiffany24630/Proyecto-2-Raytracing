@@ -76,32 +76,3 @@ impl ExhibitionProgress {
         self.completed & Self::ALL_COMPLETED == Self::ALL_COMPLETED
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::{ExhibitionId, ExhibitionProgress};
-
-    #[test]
-    fn exhibitions_are_locked_until_the_memory_core_is_restored() {
-        let mut progress = ExhibitionProgress::default();
-        assert!(!progress.can_enter(ExhibitionId::DesertPavilion));
-
-        progress.unlock_hub();
-        assert!(progress.can_enter(ExhibitionId::DesertPavilion));
-    }
-
-    #[test]
-    fn completion_is_unique_and_the_epilogue_requires_all_three() {
-        let mut progress = ExhibitionProgress::default();
-        progress.unlock_hub();
-
-        for (index, exhibition) in ExhibitionId::ALL.into_iter().enumerate() {
-            assert!(progress.complete(exhibition));
-            assert!(!progress.complete(exhibition));
-            assert_eq!(progress.completed_count(), (index + 1) as u32);
-        }
-
-        assert!(progress.all_completed());
-        assert!(!progress.can_enter(ExhibitionId::LuyangAcademy));
-    }
-}

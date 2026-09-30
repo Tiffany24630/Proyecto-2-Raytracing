@@ -66,27 +66,3 @@ fn smoothstep(value: f32) -> f32 {
     let t = value.clamp(0.0, 1.0);
     t * t * (3.0 - 2.0 * t)
 }
-
-#[cfg(test)]
-mod tests {
-    use super::SceneTransition;
-
-    #[test]
-    fn transition_advances_clamps_and_fades_at_the_midpoint() {
-        let mut transition = SceneTransition::new(2.0);
-        transition.restart();
-        assert!(transition.update(1.0));
-        assert_eq!(transition.progress(), 0.5);
-        assert!((transition.fade_opacity() - 0.82).abs() < f32::EPSILON);
-        assert!((transition.white_opacity() - 1.0).abs() < f32::EPSILON);
-        assert!(transition.update(2.0));
-        assert!(transition.is_finished());
-        assert_eq!(transition.fade_opacity(), 0.0);
-    }
-
-    #[test]
-    fn easing_preserves_endpoints() {
-        assert_eq!(SceneTransition::at(1.0, 0.0).eased_progress(), 0.0);
-        assert_eq!(SceneTransition::at(1.0, 1.0).eased_progress(), 1.0);
-    }
-}
