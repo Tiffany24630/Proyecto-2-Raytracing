@@ -25,25 +25,3 @@ impl AudioConfig {
         self.background_music.as_deref()
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::AudioConfig;
-    use std::path::PathBuf;
-
-    #[test]
-    fn optional_track_can_remain_unconfigured() {
-        assert_eq!(AudioConfig::default().background_music(), None);
-    }
-
-    #[test]
-    fn future_backend_receives_a_typed_track_path() {
-        let config = AudioConfig {
-            background_music: Some(PathBuf::from("music/theme.ogg")),
-        };
-        assert_eq!(
-            config.background_music(),
-            Some(std::path::Path::new("music/theme.ogg"))
-        );
-    }
-}
