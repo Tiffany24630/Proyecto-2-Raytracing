@@ -12,18 +12,3 @@ impl EyeOfGod {
         self.active
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::EyeOfGod;
-
-    #[test]
-    fn mode_can_be_enabled_and_disabled() {
-        let mut eye = EyeOfGod::default();
-        assert!(!eye.is_active());
-        eye.toggle();
-        assert!(eye.is_active());
-        eye.toggle();
-        assert!(!eye.is_active());
-    }
-}

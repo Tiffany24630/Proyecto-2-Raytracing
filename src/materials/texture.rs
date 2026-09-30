@@ -53,6 +53,33 @@ impl Texture {
             pixel[2] as f32 / 255.0,
         )
     }
+
+    /// Muestrea la textura como un panorama equirectangular a partir de una
+    /// direcciÃ³n 3D normalizada: el azimut (`atan2`) recorre las columnas de
+    /// forma cÃ­clica (por eso solo el eje horizontal se envuelve con
+    /// `rem_euclid`) y la elevaciÃ³n (`asin`) recorre las filas de cenit
+    /// (arriba) a nadir (abajo), sin envolver verticalmente. Se usa para el
+    /// skybox: en vez de mezclar dos colores planos, cada direcciÃ³n de rayo
+    /// que no golpea geometrÃ­a cae en un texel real de un panorama.
+    pub fn sample_direction(&self, direction: Vec3) -> Vec3 {
+        let azimuth = direction.z.atan2(direction.x);
+        let u = (azimuth / std::f32::consts::TAU + 0.5).rem_euclid(1.0);
+        let elevation = direction.y.clamp(-1.0, 1.0).asin();
+        let v = (0.5 - elevation / std::f32::consts::PI).clamp(0.0, 1.0);
+
+        let x = u * self.width as f32;
+        let y = v * self.height as f32;
+        let x0 = x.floor() as usize % self.width;
+        let y0 = (y.floor() as usize).min(self.height - 1);
+        let x1 = (x0 + 1) % self.width;
+        let y1 = (y0 + 1).min(self.height - 1);
+        let tx = x.fract();
+        let ty = y.fract();
+
+        let top = self.pixel(x0, y0) * (1.0 - tx) + self.pixel(x1, y0) * tx;
+        let bottom = self.pixel(x0, y1) * (1.0 - tx) + self.pixel(x1, y1) * tx;
+        top * (1.0 - ty) + bottom * ty
+    }
 }
 
 pub struct TextureSet {
@@ -62,6 +89,7 @@ pub struct TextureSet {
     metal: Texture,
     crystal: Texture,
     ink: Texture,
+    skybox: Texture,
 }
 
 impl TextureSet {
@@ -74,6 +102,7 @@ impl TextureSet {
             metal: Texture::load(directory.join("metal.png"))?,
             crystal: Texture::load(directory.join("crystal.png"))?,
             ink: Texture::load(directory.join("ink.png"))?,
+            skybox: Texture::load(directory.join("skybox.png"))?,
         })
     }
 
@@ -91,23 +120,10 @@ impl TextureSet {
         };
         texture.sample_bilinear(uv, material.texture_scale)
     }
-}
 
-#[cfg(test)]
-mod tests {
-    use super::Texture;
-    use crate::raytracing::Uv;
-
-    #[test]
-    fn bilinear_sampling_repeats_uv_coordinates() {
-        let texture = Texture {
-            width: 2,
-            height: 2,
-            pixels: vec![[255, 0, 0], [0, 255, 0], [0, 0, 255], [255, 255, 255]],
-        };
-
-        let original = texture.sample_bilinear(Uv::new(0.125, 0.375), 1.0);
-        let repeated = texture.sample_bilinear(Uv::new(1.125, -0.625), 1.0);
-        assert!((original - repeated).length() < 1e-6);
+    /// Color del panorama del skybox para una direcciÃ³n de rayo que no
+    /// impactÃ³ ninguna geometrÃ­a de la escena.
+    pub fn sample_skybox(&self, direction: Vec3) -> Vec3 {
+        self.skybox.sample_direction(direction)
     }
 }

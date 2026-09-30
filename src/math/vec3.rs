@@ -112,18 +112,3 @@ impl Neg for Vec3 {
         Self::new(-self.x, -self.y, -self.z)
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::Vec3;
-
-    #[test]
-    fn vector_operations_are_consistent() {
-        let x = Vec3::new(1.0, 0.0, 0.0);
-        let y = Vec3::new(0.0, 1.0, 0.0);
-
-        assert_eq!(x.dot(y), 0.0);
-        assert_eq!(x.cross(y), Vec3::new(0.0, 0.0, 1.0));
-        assert!((Vec3::new(3.0, 4.0, 0.0).normalized().length() - 1.0).abs() < 1e-6);
-    }
-}

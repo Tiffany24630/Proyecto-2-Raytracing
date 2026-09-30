@@ -10,9 +10,6 @@ pub struct Cube {
     name: &'static str,
     center: Vec3,
     half_size: Vec3,
-    // `sin`/`cos` del giro en Y, calculados una sola vez al construir el cubo:
-    // recalcularlos en cada prueba de intersecciÃ³n era de lo mÃ¡s caro del
-    // trazado. Con giro cero se evita por completo rotar rayos y normales.
     sin_yaw: f32,
     cos_yaw: f32,
     material: Material,
@@ -46,7 +43,6 @@ impl Cube {
         self.sin_yaw == 0.0 && self.cos_yaw == 1.0
     }
 
-    /// Equivale a `rotate_y(vector, -yaw)`: del mundo al espacio local del cubo.
     fn to_local(&self, vector: Vec3) -> Vec3 {
         if self.is_axis_aligned() {
             return vector;
@@ -58,7 +54,6 @@ impl Cube {
         )
     }
 
-    /// Equivale a `rotate_y(vector, yaw)`: del espacio local al mundo.
     fn to_world(&self, vector: Vec3) -> Vec3 {
         if self.is_axis_aligned() {
             return vector;
@@ -123,8 +118,6 @@ impl Object for Cube {
     }
 
     fn bounds(&self) -> Option<(Vec3, Vec3)> {
-        // Caja alineada a los ejes que contiene al cubo girado: la extensiÃ³n
-        // en X/Z solo depende de |sin| y |cos|, no del signo del giro.
         let cos = self.cos_yaw.abs();
         let sin = self.sin_yaw.abs();
         let extent = Vec3::new(
@@ -136,9 +129,6 @@ impl Object for Cube {
     }
 
     fn hit(&self, ray: &Ray, t_min: f32, t_max: f32) -> Option<HitRecord> {
-        // La rotaciÃ³n conserva la longitud, asÃ­ que la direcciÃ³n local sigue
-        // siendo unitaria y `t` coincide con la distancia en el mundo: no hace
-        // falta volver a normalizar (`Ray::new` hacÃ­a un `sqrt` por prueba).
         let origin = self.to_local(ray.origin - self.center);
         let direction = self.to_local(ray.direction);
         let origins = [origin.x, origin.y, origin.z];

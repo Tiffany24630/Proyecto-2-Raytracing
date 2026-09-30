@@ -40,3 +40,23 @@ pub fn shade(
 
     ambient + diffuse + specular
 }
+
+/// Aporte difuso + especular de una luz adicional, sin el tÃ©rmino ambiental ni
+/// la emisiÃ³n (esos ya los suma `shade` una sola vez para la luz principal).
+pub fn shade_light_only(
+    material: Material,
+    surface_albedo: Vec3,
+    normal: Vec3,
+    light_direction: Vec3,
+    view_direction: Vec3,
+    light: &Light,
+) -> Vec3 {
+    let diffuse_strength = normal.dot(light_direction).max(0.0) * light.intensity;
+    let diffuse = surface_albedo * light.color * diffuse_strength;
+
+    let half_vector = (light_direction + view_direction).normalized();
+    let specular_strength = normal.dot(half_vector).max(0.0).powf(40.0) * material.specular;
+    let specular = light.color * (specular_strength * light.intensity);
+
+    diffuse + specular
+}

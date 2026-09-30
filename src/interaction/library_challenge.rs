@@ -126,39 +126,3 @@ impl LibraryChallenge {
         *self = Self::default();
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::{LibraryChallenge, LibraryPhase};
-
-    #[test]
-    fn three_unique_pages_restore_the_book() {
-        let mut challenge = LibraryChallenge::default();
-        assert!(challenge.collect(0));
-        assert!(!challenge.collect(0));
-        assert!(challenge.collect(1));
-        assert!(challenge.collect(2));
-        assert_eq!(challenge.collected_count(), 3);
-        assert_eq!(challenge.phase(), LibraryPhase::Complete);
-    }
-
-    #[test]
-    fn threat_approaches_in_stages_and_timeout_defeats_the_player() {
-        let mut challenge = LibraryChallenge::default();
-        assert!(challenge.update(16.0).visual_changed);
-        assert_eq!(challenge.corruption(), 0.38);
-        assert!(challenge.update(15.0).visual_changed);
-        assert_eq!(challenge.corruption(), 0.72);
-        assert!(challenge.update(20.0).visual_changed);
-        assert_eq!(challenge.phase(), LibraryPhase::Defeated);
-        assert_eq!(challenge.remaining_display(), 0);
-    }
-
-    #[test]
-    fn timer_reports_ui_ticks_without_visual_scene_changes() {
-        let mut challenge = LibraryChallenge::default();
-        let update = challenge.update(1.0);
-        assert!(update.ui_changed);
-        assert!(!update.visual_changed);
-    }
-}

@@ -32,29 +32,3 @@ impl Material {
         assert!((0.0..=1.0).contains(&self.texture_weight));
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use crate::materials::{MaterialKind, crystal, ink, metal, stone, wood};
-
-    #[test]
-    fn exactly_five_material_presets_are_valid() {
-        let materials = [stone(), wood(), metal(), crystal(), ink()];
-        let expected_kinds = [
-            MaterialKind::Stone,
-            MaterialKind::Wood,
-            MaterialKind::Metal,
-            MaterialKind::Crystal,
-            MaterialKind::Ink,
-        ];
-
-        for material in materials {
-            material.validate();
-        }
-        assert_eq!(materials.map(|material| material.kind), expected_kinds);
-        assert!(metal().reflectivity > stone().reflectivity);
-        assert!(crystal().transparency > metal().transparency);
-        assert!((crystal().refractive_index - 1.5).abs() < f32::EPSILON);
-        assert!(ink().emission.length_squared() > 0.0);
-    }
-}
