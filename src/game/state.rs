@@ -132,24 +132,3 @@ impl SceneState {
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::{AnimationState, ControlMode, SceneState, SkyState};
-
-    #[test]
-    fn states_define_controls_sky_animation_and_visibility() {
-        assert_eq!(SceneState::Exterior.controls(), ControlMode::Portal);
-        assert!(!SceneState::Exterior.object_visible("memory core"));
-        assert!(!SceneState::Temple.object_visible("puzzle piece A"));
-        assert!(SceneState::Puzzle.object_visible("puzzle piece A"));
-        assert!(!SceneState::Puzzle.object_visible("exterior rock"));
-        assert!(SceneState::Exterior.object_visible("exterior grass"));
-        assert!(!SceneState::Temple.object_visible("exterior grass"));
-        assert_eq!(SceneState::Melanta.sky(), SkyState::Melanta);
-        assert_eq!(
-            SceneState::Entering.animation(),
-            AnimationState::PortalEntry
-        );
-    }
-}

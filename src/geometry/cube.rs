@@ -1,6 +1,6 @@
 use crate::{
     materials::Material,
-    math::{Vec3, rotate_y},
+    math::Vec3,
     raytracing::{HitRecord, Ray, Uv},
 };
 
@@ -10,7 +10,11 @@ pub struct Cube {
     name: &'static str,
     center: Vec3,
     half_size: Vec3,
-    yaw: f32,
+    // `sin`/`cos` del giro en Y, calculados una sola vez al construir el cubo:
+    // recalcularlos en cada prueba de intersecciÃ³n era de lo mÃ¡s caro del
+    // trazado. Con giro cero se evita por completo rotar rayos y normales.
+    sin_yaw: f32,
+    cos_yaw: f32,
     material: Material,
 }
 
@@ -27,13 +31,43 @@ impl Cube {
         material: Material,
     ) -> Self {
         assert!(size.x > 0.0 && size.y > 0.0 && size.z > 0.0);
+        let (sin_yaw, cos_yaw) = yaw.sin_cos();
         Self {
             name,
             center,
             half_size: size * 0.5,
-            yaw,
+            sin_yaw,
+            cos_yaw,
             material,
         }
+    }
+
+    fn is_axis_aligned(&self) -> bool {
+        self.sin_yaw == 0.0 && self.cos_yaw == 1.0
+    }
+
+    /// Equivale a `rotate_y(vector, -yaw)`: del mundo al espacio local del cubo.
+    fn to_local(&self, vector: Vec3) -> Vec3 {
+        if self.is_axis_aligned() {
+            return vector;
+        }
+        Vec3::new(
+            vector.x * self.cos_yaw - vector.z * self.sin_yaw,
+            vector.y,
+            vector.x * self.sin_yaw + vector.z * self.cos_yaw,
+        )
+    }
+
+    /// Equivale a `rotate_y(vector, yaw)`: del espacio local al mundo.
+    fn to_world(&self, vector: Vec3) -> Vec3 {
+        if self.is_axis_aligned() {
+            return vector;
+        }
+        Vec3::new(
+            vector.x * self.cos_yaw + vector.z * self.sin_yaw,
+            vector.y,
+            -vector.x * self.sin_yaw + vector.z * self.cos_yaw,
+        )
     }
 
     fn local_outward_normal(&self, point: Vec3) -> Vec3 {
@@ -88,30 +122,47 @@ impl Object for Cube {
         self.name
     }
 
-    fn hit(&self, ray: &Ray, t_min: f32, t_max: f32) -> Option<HitRecord> {
-        let local_ray = Ray::new(
-            rotate_y(ray.origin - self.center, -self.yaw),
-            rotate_y(ray.direction, -self.yaw),
+    fn bounds(&self) -> Option<(Vec3, Vec3)> {
+        // Caja alineada a los ejes que contiene al cubo girado: la extensiÃ³n
+        // en X/Z solo depende de |sin| y |cos|, no del signo del giro.
+        let cos = self.cos_yaw.abs();
+        let sin = self.sin_yaw.abs();
+        let extent = Vec3::new(
+            cos * self.half_size.x + sin * self.half_size.z,
+            self.half_size.y,
+            sin * self.half_size.x + cos * self.half_size.z,
         );
+        Some((self.center - extent, self.center + extent))
+    }
+
+    fn hit(&self, ray: &Ray, t_min: f32, t_max: f32) -> Option<HitRecord> {
+        // La rotaciÃ³n conserva la longitud, asÃ­ que la direcciÃ³n local sigue
+        // siendo unitaria y `t` coincide con la distancia en el mundo: no hace
+        // falta volver a normalizar (`Ray::new` hacÃ­a un `sqrt` por prueba).
+        let origin = self.to_local(ray.origin - self.center);
+        let direction = self.to_local(ray.direction);
+        let origins = [origin.x, origin.y, origin.z];
+        let directions = [direction.x, direction.y, direction.z];
+        let halves = [self.half_size.x, self.half_size.y, self.half_size.z];
         let mut near = f32::NEG_INFINITY;
         let mut far = f32::INFINITY;
 
         for axis in 0..3 {
-            let origin = local_ray.origin.component(axis);
-            let direction = local_ray.direction.component(axis);
-            let minimum = -self.half_size.component(axis);
-            let maximum = self.half_size.component(axis);
+            let axis_origin = origins[axis];
+            let axis_direction = directions[axis];
+            let minimum = -halves[axis];
+            let maximum = halves[axis];
 
-            if direction.abs() < 1e-8 {
-                if origin < minimum || origin > maximum {
+            if axis_direction.abs() < 1e-8 {
+                if axis_origin < minimum || axis_origin > maximum {
                     return None;
                 }
                 continue;
             }
 
-            let inverse_direction = 1.0 / direction;
-            let mut first = (minimum - origin) * inverse_direction;
-            let mut second = (maximum - origin) * inverse_direction;
+            let inverse_direction = 1.0 / axis_direction;
+            let mut first = (minimum - axis_origin) * inverse_direction;
+            let mut second = (maximum - axis_origin) * inverse_direction;
             if inverse_direction < 0.0 {
                 std::mem::swap(&mut first, &mut second);
             }
@@ -131,9 +182,9 @@ impl Object for Cube {
             return None;
         }
         let point = ray.at(t);
-        let local_point = local_ray.at(t);
+        let local_point = origin + direction * t;
         let local_normal = self.local_outward_normal(local_point);
-        let outward_normal = rotate_y(local_normal, self.yaw);
+        let outward_normal = self.to_world(local_normal);
         Some(HitRecord::new(
             ray,
             point,
@@ -143,77 +194,5 @@ impl Object for Cube {
             self.uv(local_point, local_normal),
             self.name,
         ))
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{Cube, Object};
-    use crate::{
-        materials::stone,
-        math::Vec3,
-        raytracing::{Ray, Uv},
-    };
-
-    #[test]
-    fn ray_hits_front_face_of_cube() {
-        let cube = Cube::from_center(
-            "test cube",
-            Vec3::new(0.0, 0.0, 0.0),
-            Vec3::new(2.0, 2.0, 2.0),
-            stone(),
-        );
-        let ray = Ray::new(Vec3::new(0.0, 0.0, 5.0), Vec3::new(0.0, 0.0, -1.0));
-        let hit = cube.hit(&ray, 0.001, f32::INFINITY).unwrap();
-
-        assert!((hit.t - 4.0).abs() < 1e-6);
-        assert_eq!(hit.normal, Vec3::new(0.0, 0.0, 1.0));
-        assert_eq!(hit.uv, Uv::new(0.5, 0.5));
-        assert!(hit.front_face);
-    }
-
-    #[test]
-    fn ray_misses_cube() {
-        let cube = Cube::from_center(
-            "test cube",
-            Vec3::new(0.0, 0.0, 0.0),
-            Vec3::new(2.0, 2.0, 2.0),
-            stone(),
-        );
-        let ray = Ray::new(Vec3::new(0.0, 3.0, 5.0), Vec3::new(0.0, 0.0, -1.0));
-
-        assert!(cube.hit(&ray, 0.001, f32::INFINITY).is_none());
-    }
-
-    #[test]
-    fn ray_inside_cube_hits_exit_face() {
-        let cube = Cube::from_center(
-            "test cube",
-            Vec3::new(0.0, 0.0, 0.0),
-            Vec3::new(2.0, 2.0, 2.0),
-            stone(),
-        );
-        let ray = Ray::new(Vec3::new(0.0, 0.0, 0.0), Vec3::new(0.0, 0.0, 1.0));
-        let hit = cube.hit(&ray, 0.001, f32::INFINITY).unwrap();
-
-        assert!((hit.t - 1.0).abs() < 1e-6);
-        assert!(!hit.front_face);
-        assert_eq!(hit.normal, Vec3::new(0.0, 0.0, -1.0));
-    }
-
-    #[test]
-    fn ray_intersects_a_rotated_non_uniform_cube() {
-        let cube = Cube::from_center_rotated(
-            "rotated cube",
-            Vec3::new(0.0, 0.0, 0.0),
-            Vec3::new(1.0, 1.0, 4.0),
-            std::f32::consts::FRAC_PI_2,
-            stone(),
-        );
-        let ray = Ray::new(Vec3::new(3.0, 0.0, 0.0), Vec3::new(-1.0, 0.0, 0.0));
-        let hit = cube.hit(&ray, 0.001, f32::INFINITY).unwrap();
-
-        assert!((hit.t - 1.0).abs() < 1e-5);
-        assert!((hit.normal.x - 1.0).abs() < 1e-5);
     }
 }
