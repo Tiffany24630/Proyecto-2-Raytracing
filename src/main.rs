@@ -250,7 +250,6 @@ fn run_interactive(
     let mut audio = audio::AudioDirector::new();
     audio.play_music_for(SceneState::Exterior);
     let mut audio_scene = SceneState::Exterior;
-    let mut melanta_was_visible = false;
     let mut controller = ControllerInput::new();
     let interactive_renderer =
         Renderer::new(IMAGE_WIDTH, IMAGE_HEIGHT, Vec3::new(0.20, 0.31, 0.54))
@@ -339,6 +338,10 @@ fn run_interactive(
 
     let mut display_buffer = buffer.clone();
     while window.is_open() {
+        let previous_scene = game.scene();
+        let previous_desert_phase = desert_challenge.phase();
+        let previous_library_phase = library_challenge.phase();
+        let previous_academy_phase = academy_challenge.phase();
         controller.update();
         let now = Instant::now();
         let delta_seconds = now.duration_since(last_tick).as_secs_f32();
@@ -418,7 +421,6 @@ fn run_interactive(
                         if let Some(destination_view) = destination_view
                             && game.handle(GameEvent::EnterExhibition(exhibition))
                         {
-                            audio.enter_exhibition(exhibition);
                             match exhibition {
                                 ExhibitionId::DesertPavilion => desert_challenge.restart(),
                                 ExhibitionId::MahavaipulyaChamber => library_challenge.restart(),
@@ -728,13 +730,6 @@ fn run_interactive(
             scene_changed = true;
         }
 
-        if game.scene() != audio_scene {
-            audio.play_music_for(game.scene());
-            if game.scene() == SceneState::Melanta {
-                audio.play_effect(audio::SoundEffect::MelantaAppear);
-            }
-            audio_scene = game.scene();
-        }
         if game.scene() == SceneState::MahavaipulyaChamber {
             let update = library_challenge.update(delta_seconds);
             if update.ui_changed {
@@ -811,10 +806,24 @@ fn run_interactive(
             SceneState::MahavaipulyaChamber => library_challenge.phase() == LibraryPhase::Defeated,
             _ => false,
         };
-        if melanta_active && !melanta_was_visible && game.scene() != SceneState::Melanta {
-            audio.play_effect(audio::SoundEffect::MelantaAppear);
+        if game.scene() != audio_scene {
+            audio.play_music_for(game.scene());
+            audio_scene = game.scene();
         }
-        melanta_was_visible = melanta_active;
+        audio.set_melanta(melanta_active, game.scene() == SceneState::Melanta);
+        if game.scene() == SceneState::Entering && previous_scene != SceneState::Entering {
+            audio.play_effect(audio::SoundEffect::Loading);
+        }
+        let task_completed = match game.scene() {
+            SceneState::DesertPavilion => previous_desert_phase != DesertPhase::Complete
+                && desert_challenge.phase() == DesertPhase::Complete,
+            SceneState::MahavaipulyaChamber => previous_library_phase != LibraryPhase::Complete
+                && library_challenge.phase() == LibraryPhase::Complete,
+            SceneState::LuyangAcademy => previous_academy_phase != AcademyPhase::Complete
+                && academy_challenge.phase() == AcademyPhase::Complete,
+            _ => false,
+        };
+        if task_completed { audio.play_effect(audio::SoundEffect::TaskComplete); }
         let animating = animations_enabled
             && (game.scene() == SceneState::Temple
                 || game.scene() == SceneState::Final

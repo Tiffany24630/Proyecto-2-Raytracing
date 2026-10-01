@@ -21,6 +21,7 @@ pub fn draw(
         return;
     }
     let gold = if final_scene { 0x8eeeff } else { 0xe8bd58 };
+    let eye_color = if hovered && !final_scene { 0x000000 } else { gold };
     let red = if final_scene { 0x388ac4 } else { 0xa52e13 };
     let pulse = if idle > 5.0 { ((idle - 5.0) * 2.0).sin() } else { 0.0 };
     let shift = if pressed { 1.0 } else { 0.0 };
@@ -48,9 +49,9 @@ pub fn draw(
                 if contains(polygon, point) { color = Some(fill); }
             }
             let eye = ((point.0 - 4.0).powi(2) + (point.1 - 20.0).powi(2)).sqrt();
-            if eye < 2.4 { color = Some(if pressed { 0xffffff } else { gold }); }
+            if eye < 2.4 { color = Some(if pressed { 0xffffff } else { eye_color }); }
             if (hovered || idle > 5.0) && (eye - (4.0 + pulse * 0.6)).abs() < 0.6 {
-                color = Some(gold);
+                color = Some(eye_color);
             }
             if pressed && (eye - 7.0).abs() < 0.6 { color = Some(0xffffff); }
             if idle > 5.0 {
