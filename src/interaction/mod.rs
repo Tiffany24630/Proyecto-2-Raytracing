@@ -1,4 +1,5 @@
 mod academy_challenge;
+mod controller;
 mod desert_challenge;
 mod eye_of_god;
 mod library_challenge;
@@ -7,6 +8,7 @@ mod puzzle;
 mod selection;
 
 pub use academy_challenge::{AcademyChallenge, AcademyPhase};
+pub use controller::ControllerInput;
 pub use desert_challenge::{DesertChallenge, DesertPhase};
 pub use eye_of_god::EyeOfGod;
 pub use library_challenge::{LibraryChallenge, LibraryPhase};

@@ -5,7 +5,7 @@ use rodio::{Decoder, OutputStream, OutputStreamHandle, Sink, Source};
 use crate::game::{ExhibitionId, SceneState};
 
 pub const BACKGROUND_MUSIC_ENV: &str = "TEMPLE_OF_SPACE_MUSIC";
-pub const DEFAULT_BACKGROUND_MUSIC: &str = "assets/audio/background.ogg";
+pub const DEFAULT_BACKGROUND_MUSIC: &str = "assets/audio/music_world.mp3";
 pub const AUDIO_DIRECTORY: &str = "assets/audio";
 
 pub enum SoundEffect {
@@ -22,14 +22,14 @@ pub enum SoundEffect {
 impl SoundEffect {
     const fn file_name(&self) -> &'static str {
         match self {
-            Self::DoorOpen => "door_open.ogg",
-            Self::EnterDesert => "enter_desert.ogg",
-            Self::EnterLibrary => "enter_library.ogg",
-            Self::EnterAcademy => "enter_academy.ogg",
-            Self::MelantaAppear => "melanta_appear.ogg",
-            Self::PageCollect => "page_collect.ogg",
-            Self::PaintingMove => "painting_move.ogg",
-            Self::DesertLifeLost => "desert_life_lost.ogg",
+            Self::DoorOpen => "door_open.mp3",
+            Self::EnterDesert => "enter_desert.mp3",
+            Self::EnterLibrary => "enter_library.mp3",
+            Self::EnterAcademy => "enter_academy.mp3",
+            Self::MelantaAppear => "melanta_appear.mp3",
+            Self::PageCollect => "page_collect.mp3",
+            Self::PaintingMove => "painting_move.mp3",
+            Self::DesertLifeLost => "desert_life_lost.mp3",
         }
     }
 }
@@ -59,11 +59,11 @@ impl AudioDirector {
 
     pub fn play_music_for(&mut self, state: SceneState) {
         let file_name = match state {
-            SceneState::DesertPavilion => "music_desert.ogg",
-            SceneState::MahavaipulyaChamber => "music_library.ogg",
-            SceneState::LuyangAcademy => "music_academy.ogg",
-            SceneState::Final => "music_nihilita.ogg",
-            _ => "music_world.ogg",
+            SceneState::DesertPavilion => "music_desert.mp3",
+            SceneState::MahavaipulyaChamber => "music_library.mp3",
+            SceneState::LuyangAcademy => "music_academy.mp3",
+            SceneState::Final => "music_nihilita.mp3",
+            _ => "music_world.mp3",
         };
         let Some(handle) = &self.handle else { return; };
         if let Some(music) = self.music.take() { music.stop(); }

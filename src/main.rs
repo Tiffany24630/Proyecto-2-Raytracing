@@ -19,7 +19,7 @@ use game::{
 };
 use interaction::{
     AcademyChallenge, AcademyPhase, AcademyTarget, CAMERA_TOLERANCE, DesertChallenge, DesertPhase,
-    EyeOfGod, LibraryChallenge, LibraryPhase, POSITION_TOLERANCE, PerspectiveStatus, Puzzle,
+    ControllerInput, EyeOfGod, LibraryChallenge, LibraryPhase, POSITION_TOLERANCE, PerspectiveStatus, Puzzle,
     ROTATION_TOLERANCE, academy_target_at, check_perspective, exhibition_at, library_page_at,
 };
 use interface::{UiState, draw_interface, draw_narrative, draw_world_label};
@@ -251,6 +251,7 @@ fn run_interactive(
     audio.play_music_for(SceneState::Exterior);
     let mut audio_scene = SceneState::Exterior;
     let mut melanta_was_visible = false;
+    let mut controller = ControllerInput::new();
     let interactive_renderer =
         Renderer::new(IMAGE_WIDTH, IMAGE_HEIGHT, Vec3::new(0.20, 0.31, 0.54))
             .with_max_depth(INTERACTIVE_MAX_DEPTH);
@@ -338,6 +339,7 @@ fn run_interactive(
 
     let mut display_buffer = buffer.clone();
     while window.is_open() {
+        controller.update();
         let now = Instant::now();
         let delta_seconds = now.duration_since(last_tick).as_secs_f32();
         last_tick = now;
@@ -354,7 +356,8 @@ fn run_interactive(
             help_visible = !help_visible;
             changed = true;
         }
-        if window.is_key_pressed(Key::Escape, KeyRepeat::No) {
+        if window.is_key_pressed(Key::Escape, KeyRepeat::No)
+            || (controller.back_pressed() && game.scene() == SceneState::Puzzle) {
             match handle_escape(&mut game, &mut eye, &mut puzzle) {
                 EscapeAction::Redraw => {
                     changed = true;
@@ -365,13 +368,13 @@ fn run_interactive(
         }
         if game.scene() == SceneState::Temple
             && !eye.is_active()
-            && window.is_key_pressed(Key::Tab, KeyRepeat::No)
+            && (window.is_key_pressed(Key::Tab, KeyRepeat::No) || controller.eye_pressed())
             && game.handle(GameEvent::ActivateEyeOfGod)
         {
             eye.toggle();
             changed = true;
         }
-        if window.is_key_pressed(Key::P, KeyRepeat::No) {
+        if window.is_key_pressed(Key::P, KeyRepeat::No) || controller.pause_pressed() {
             animations_enabled = !animations_enabled;
             changed = true;
             force_full_render = true;
@@ -383,9 +386,10 @@ fn run_interactive(
             scene_changed = true;
         }
         let left_mouse_down = window.get_mouse_down(MouseButton::Left);
-        let scene_clicked = left_mouse_down && !left_mouse_was_down;
+        let controller_confirm = controller.confirm_pressed();
+        let scene_clicked = (left_mouse_down && !left_mouse_was_down) || controller_confirm;
         left_mouse_was_down = left_mouse_down;
-        let interact_pressed = window.is_key_pressed(Key::E, KeyRepeat::No);
+        let interact_pressed = window.is_key_pressed(Key::E, KeyRepeat::No) || controller_confirm;
         if !help_visible && (interact_pressed || scene_clicked) {
             match game.scene() {
                 SceneState::Exterior => {
@@ -401,7 +405,7 @@ fn run_interactive(
                     }
                 }
                 SceneState::Temple => {
-                    let (u, v) = mouse_uv(&window);
+                    let (u, v) = interaction_uv(&window, controller_confirm);
                     let exhibition = exhibition_at(&camera, &scene.objects, u, v);
                     if let Some(exhibition) = exhibition {
                         let destination_view = match exhibition {
@@ -433,7 +437,7 @@ fn run_interactive(
                     }
                 }
                 SceneState::Puzzle => {
-                    let (u, v) = mouse_uv(&window);
+                    let (u, v) = interaction_uv(&window, controller_confirm);
                     let interacted = puzzle.interact_at(&camera, &scene.objects, u, v);
                     if interacted {
                         changed = true;
@@ -465,7 +469,7 @@ fn run_interactive(
                     }
                 }
                 SceneState::MahavaipulyaChamber => {
-                    let (u, v) = mouse_uv(&window);
+                    let (u, v) = interaction_uv(&window, controller_confirm);
                     if let Some(page) = library_page_at(&camera, &scene.objects, u, v) {
                         if library_challenge.collect(page) {
                             audio.play_effect(audio::SoundEffect::PageCollect);
@@ -511,7 +515,7 @@ fn run_interactive(
                             scene_changed = true;
                         }
                         AcademyPhase::Arranging => {
-                            let (u, v) = mouse_uv(&window);
+                            let (u, v) = interaction_uv(&window, controller_confirm);
                             match academy_target_at(&camera, &scene.objects, u, v) {
                                 Some(AcademyTarget::Fragment(fragment)) => {
                                     if academy_challenge.select(fragment) {
@@ -557,7 +561,7 @@ fn run_interactive(
             SceneState::DesertPavilion
                 | SceneState::MahavaipulyaChamber
                 | SceneState::LuyangAcademy
-        ) && window.is_key_pressed(Key::B, KeyRepeat::No)
+        ) && (window.is_key_pressed(Key::B, KeyRepeat::No) || controller.back_pressed())
             && game.handle(GameEvent::LeaveExhibition)
         {
             portal_start_camera = camera;
@@ -567,14 +571,14 @@ fn run_interactive(
             changed = true;
         }
         if game.scene() == SceneState::DesertPavilion
-            && window.is_key_pressed(Key::R, KeyRepeat::No)
+            && (window.is_key_pressed(Key::R, KeyRepeat::No) || controller.rotate_pressed())
             && desert_challenge.rotate_seal()
         {
             changed = true;
             scene_changed = true;
         }
         if game.scene() == SceneState::LuyangAcademy
-            && window.is_key_pressed(Key::R, KeyRepeat::No)
+            && (window.is_key_pressed(Key::R, KeyRepeat::No) || controller.rotate_pressed())
             && academy_challenge.move_selected_right()
         {
             audio.play_effect(audio::SoundEffect::PaintingMove);
@@ -642,7 +646,27 @@ fn run_interactive(
                     prefer_preview = true;
                 }
             }
-            let rotated = window.is_key_pressed(Key::R, KeyRepeat::No)
+            for (active, delta) in [
+                (controller.dpad_left(), Vec3::new(-OBJECT_MOVE_STEP, 0.0, 0.0)),
+                (controller.dpad_right(), Vec3::new(OBJECT_MOVE_STEP, 0.0, 0.0)),
+                (controller.dpad_up(), Vec3::new(0.0, 0.0, -OBJECT_MOVE_STEP)),
+                (controller.dpad_down(), Vec3::new(0.0, 0.0, OBJECT_MOVE_STEP)),
+            ] {
+                if active && puzzle.move_selected(delta) {
+                    changed = true;
+                    scene_changed = true;
+                    prefer_preview = true;
+                }
+            }
+            let (stick_x, stick_y) = controller.left_stick();
+            if (stick_x != 0.0 || stick_y != 0.0)
+                && puzzle.move_selected(Vec3::new(stick_x * OBJECT_MOVE_STEP, 0.0, -stick_y * OBJECT_MOVE_STEP))
+            {
+                changed = true;
+                scene_changed = true;
+                prefer_preview = true;
+            }
+            let rotated = (window.is_key_pressed(Key::R, KeyRepeat::No) || controller.rotate_pressed())
                 && puzzle.rotate_selected(OBJECT_ROTATION_STEP);
             if rotated {
                 changed = true;
@@ -667,6 +691,14 @@ fn run_interactive(
             }
             if camera_enabled && key_held(&window, Key::Down) {
                 camera.orbit(0.0, -orbit_step);
+                changed = true;
+                prefer_preview = true;
+            }
+        }
+        if camera_enabled && !(game.scene() == SceneState::Puzzle && puzzle.selected().is_some()) {
+            let (stick_x, stick_y) = controller.right_stick();
+            if stick_x != 0.0 || stick_y != 0.0 {
+                camera.orbit(stick_x * CAMERA_ORBIT_SPEED * delta_seconds, -stick_y * CAMERA_ORBIT_SPEED * delta_seconds);
                 changed = true;
                 prefer_preview = true;
             }
@@ -1386,6 +1418,10 @@ fn mouse_uv(window: &Window) -> (f32, f32) {
         .get_mouse_pos(MouseMode::Clamp)
         .map(|(x, y)| (x / IMAGE_WIDTH as f32, 1.0 - y / IMAGE_HEIGHT as f32))
         .unwrap_or((0.5, 0.5))
+}
+
+fn interaction_uv(window: &Window, controller_confirm: bool) -> (f32, f32) {
+    if controller_confirm { (0.5, 0.5) } else { mouse_uv(window) }
 }
 
 fn window_title(game: GameState, sky_corruption: f32, camera: &Camera) -> String {
