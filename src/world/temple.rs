@@ -44,6 +44,16 @@ pub fn build_temple_interactive(
     core_selected: bool,
     puzzle: PuzzleLayout,
 ) -> Scene {
+    build_temple_view(memory_state, core_pose, core_selected, puzzle, None)
+}
+
+pub fn build_temple_view(
+    memory_state: MemoryCoreState,
+    core_pose: MemoryCorePose,
+    core_selected: bool,
+    puzzle: PuzzleLayout,
+    exterior: Option<bool>,
+) -> Scene {
     let stone = stone();
     let wood = wood();
     let metal = metal();
@@ -54,7 +64,7 @@ pub fn build_temple_interactive(
     }
 
     let mut objects: Vec<Box<dyn Object>> = Vec::new();
-    add_exterior(&mut objects);
+    if exterior != Some(false) { add_exterior(&mut objects); }
 
     add_cube(
         &mut objects,
@@ -63,6 +73,14 @@ pub fn build_temple_interactive(
         Vec3::new(22.0, 0.35, 23.0),
         stone,
     );
+    if exterior == Some(true) {
+        add_stairs(&mut objects, stone);
+        add_walls(&mut objects, stone);
+        add_roof(&mut objects, stone, wood);
+        add_portal(&mut objects, stone, metal, crystal);
+        return Scene { objects, light: memory_state.light(),
+            camera_target: Vec3::new(0.0, 1.35, 8.65) };
+    }
     add_floor_inlays(&mut objects, metal, crystal);
     add_stairs(&mut objects, stone);
     add_walls(&mut objects, stone);
@@ -195,19 +213,19 @@ fn add_roof(objects: &mut Vec<Box<dyn Object>>, stone: Material, wood: Material)
 }
 
 fn add_platforms(objects: &mut Vec<Box<dyn Object>>, stone: Material, wood: Material) {
-    for (x, z) in [(-6.2, -4.1), (6.2, -4.1), (-6.2, 3.8)] {
+    for (x, z) in [(-3.4, -2.0), (3.4, -2.0), (0.0, 2.2)] {
         add_cube(
             objects,
             "exhibition platform",
             Vec3::new(x, -0.43, z),
-            Vec3::new(4.5, 0.58, 4.15),
+            Vec3::new(2.88, 0.58, 2.66),
             stone,
         );
         add_cube(
             objects,
             "exhibition table",
             Vec3::new(x, 0.02, z),
-            Vec3::new(3.25, 0.32, 2.65),
+            Vec3::new(2.08, 0.20, 1.70),
             wood,
         );
     }
@@ -278,76 +296,45 @@ fn add_portal(
     mut metal: Material,
     mut crystal: Material,
 ) {
-    stone.albedo = Vec3::new(0.68, 0.76, 0.84);
-    stone.emission = Vec3::new(0.055, 0.070, 0.085);
-    stone.texture_weight = 0.44;
-    metal.albedo = Vec3::new(0.92, 0.70, 0.24);
-    metal.emission = Vec3::new(0.055, 0.032, 0.006);
-    metal.texture_weight = 0.58;
-    for x in [-1.9, 1.9] {
-        add_cube(
-            objects,
-            "portal pillar",
-            Vec3::new(x, 1.55, 8.65),
-            Vec3::new(0.56, 4.75, 0.78),
-            stone,
-        );
-        add_cube(
-            objects,
-            "portal golden jamb",
-            Vec3::new(x.signum() * 1.57, 1.55, 9.06),
-            Vec3::new(0.12, 4.18, 0.12),
-            metal,
-        );
+    stone.albedo = Vec3::new(0.55, 0.53, 0.46);
+    stone.texture_weight = 0.18;
+    stone.emission = Vec3::new(0.035, 0.032, 0.025);
+    metal.albedo = Vec3::new(0.60, 0.53, 0.33);
+    metal.texture_weight = 0.12;
+    for x in [-1.65, 1.65] {
+        add_cube(objects, "portal pillar", Vec3::new(x, 1.45, 8.65),
+            Vec3::new(0.48, 4.0, 0.65), stone);
+        add_cube(objects, "portal carved jamb", Vec3::new(x * 0.87, 1.45, 9.01),
+            Vec3::new(0.12, 3.95, 0.12), stone);
+        add_cube(objects, "portal foot", Vec3::new(x, -0.30, 8.65),
+            Vec3::new(0.70, 0.48, 0.90), metal);
     }
-    add_cube(
-        objects,
-        "portal lintel",
-        Vec3::new(0.0, 3.93, 8.65),
-        Vec3::new(4.72, 0.52, 0.78),
-        metal,
-    );
-    for (y, width) in [(4.28, 4.16), (4.53, 3.22), (4.76, 2.18)] {
-        add_cube(
-            objects,
-            "portal celestial crown",
-            Vec3::new(0.0, y, 8.65),
-            Vec3::new(width, 0.18, 0.70),
-            if y > 4.28 { metal } else { stone },
-        );
+    for step in 0..18 {
+        let t = step as f32 / 18.0;
+        let half_width = 1.89 * (1.0 - t).powf(0.72);
+        let y = 3.46 + t * 1.34;
+        for side in [-1.0, 1.0] {
+            add_cube(objects, "portal pointed arch", Vec3::new(side * (half_width - 0.18), y, 8.65),
+                Vec3::new(0.40, 0.105, 0.65), stone);
+        }
+        add_cube(objects, "portal arch inset", Vec3::new(0.0, y, 8.65),
+            Vec3::new((half_width * 2.0 - 0.65).max(0.06), 0.10, 0.18), {
+                let mut dark = stone;
+                dark.albedo = Vec3::new(0.095, 0.078, 0.11);
+                dark.texture_weight = 0.0;
+                dark
+            });
     }
-    add_cube(
-        objects,
-        "portal threshold",
-        Vec3::new(0.0, -0.51, 8.49),
-        Vec3::new(3.30, 0.14, 0.18),
-        metal,
-    );
-    crystal.transparency = 0.76;
-    crystal.reflectivity = 0.14;
-    crystal.emission = Vec3::new(0.09, 0.25, 0.38);
-    crystal.texture_weight = 0.58;
-    add_cube(
-        objects,
-        "portal membrane",
-        Vec3::new(0.0, 1.54, 8.61),
-        Vec3::new(3.55, 4.18, 0.18),
-        crystal,
-    );
-    add_cube(
-        objects,
-        "portal central seam",
-        Vec3::new(0.0, 1.54, 8.48),
-        Vec3::new(0.10, 4.00, 0.10),
-        metal,
-    );
-    add_cube(
-        objects,
-        "portal celestial sigil",
-        Vec3::new(0.0, 1.62, 8.40),
-        Vec3::new(0.68, 0.12, 0.12),
-        crystal,
-    );
+    add_cube(objects, "portal threshold", Vec3::new(0.0, -0.51, 8.65),
+        Vec3::new(4.2, 0.24, 1.1), stone);
+    crystal.transparency = 0.0;
+    crystal.reflectivity = 0.03;
+    crystal.specular = 0.12;
+    crystal.emission = Vec3::new(0.025, 0.020, 0.025);
+    crystal.texture_weight = 1.0;
+    crystal.texture_scale = 1.0;
+    add_cube(objects, "portal membrane", Vec3::new(0.0, 1.46, 8.65),
+        Vec3::new(2.86, 3.96, 0.18), crystal);
 }
 
 fn add_memory_pedestal(

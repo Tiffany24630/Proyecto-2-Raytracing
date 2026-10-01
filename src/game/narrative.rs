@@ -1,6 +1,6 @@
 use super::SceneState;
 
-const PAGE_DURATION_SECONDS: f32 = 3.6;
+const PAGE_DURATION_SECONDS: f32 = 6.5;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct NarrativeMessage {
@@ -38,8 +38,11 @@ impl NarrativeController {
             self.elapsed_seconds = 0.0;
             return true;
         }
-        if delta_seconds <= 0.0 || self.page + 1 >= messages(scene).len() {
-            return false;
+        if delta_seconds <= 0.0 { return false; }
+        if self.page + 1 >= messages(scene).len() {
+            let visible = self.elapsed_seconds < PAGE_DURATION_SECONDS;
+            self.elapsed_seconds = (self.elapsed_seconds + delta_seconds).min(PAGE_DURATION_SECONDS);
+            return visible && self.elapsed_seconds >= PAGE_DURATION_SECONDS;
         }
 
         self.elapsed_seconds += delta_seconds;
@@ -52,6 +55,7 @@ impl NarrativeController {
     }
 
     pub fn message(self) -> Option<NarrativeMessage> {
+        if self.elapsed_seconds >= PAGE_DURATION_SECONDS { return None; }
         messages(self.scene).get(self.page).copied()
     }
 }
@@ -86,7 +90,7 @@ fn messages(scene: SceneState) -> &'static [NarrativeMessage] {
         SceneState::Puzzle => &[
             NarrativeMessage {
                 first_line: "DEX PUEDE ARRASTRAR EL ESPACIO",
-                second_line: "VINCULA UNA PIEZA CON E",
+                second_line: "VINCULA UNA PIEZA CON Click",
                 corrupted: false,
             },
             NarrativeMessage {

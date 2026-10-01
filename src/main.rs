@@ -300,6 +300,9 @@ fn run_interactive(
     let mut memory_restored_hold = 0.0_f32;
     let mut previous_orbit_mouse = None;
     let mut left_mouse_was_down = false;
+    let mut help_visible = false;
+    let mut cursor_position = None;
+    let mut last_activity = Instant::now();
     let mut refine_at = None;
     let mut animations_enabled = true;
     let mut anim_time = 0.0_f32;
@@ -358,6 +361,7 @@ fn run_interactive(
     );
     let mut buffer = renderer.to_u32_buffer(&pixels);
 
+    let mut display_buffer = buffer.clone();
     while window.is_open() {
         let now = Instant::now();
         let delta_seconds = now.duration_since(last_tick).as_secs_f32();
@@ -367,6 +371,14 @@ fn run_interactive(
         let mut prefer_preview = false;
         let mut force_full_render = false;
 
+        if window.is_key_pressed(Key::N, KeyRepeat::No) {
+            narrative = NarrativeController::new(game.scene());
+            changed = true;
+        }
+        if window.is_key_pressed(Key::H, KeyRepeat::No) {
+            help_visible = !help_visible;
+            changed = true;
+        }
         if window.is_key_pressed(Key::Escape, KeyRepeat::No) {
             match handle_escape(&mut game, &mut eye, &mut puzzle) {
                 EscapeAction::Redraw => {
@@ -401,10 +413,11 @@ fn run_interactive(
         let scene_clicked = left_mouse_down && !left_mouse_was_down;
         left_mouse_was_down = left_mouse_down;
         let interact_pressed = window.is_key_pressed(Key::E, KeyRepeat::No);
-        if interact_pressed || scene_clicked {
+        if !help_visible && (interact_pressed || scene_clicked) {
             match game.scene() {
                 SceneState::Exterior => {
-                    if interact_pressed && game.handle(GameEvent::UsePortal) {
+                    if (interact_pressed || portal_hovered(&window, &camera, &scene))
+                        && game.handle(GameEvent::UsePortal) {
                         println!("State: {}", game.scene().label());
                         portal_start_camera = camera;
                         portal_end_camera = PortalView::Interior.camera(ASPECT_RATIO);
@@ -911,12 +924,46 @@ fn run_interactive(
                 game.scene(),
                 PerspectiveStatus::from(puzzle, perspective),
             );
+            if help_visible {
+                interface::draw_help(&mut pixels, IMAGE_WIDTH, IMAGE_HEIGHT);
+            }
             apply_white_fade(&mut pixels, portal_transition.white_opacity());
             buffer = renderer.to_u32_buffer(&pixels);
             window.set_title(&window_title(game, sky_corruption, &camera));
         }
 
-        window.update_with_buffer(&buffer, IMAGE_WIDTH, IMAGE_HEIGHT)?;
+        let mouse = window.get_mouse_pos(MouseMode::Discard);
+        if mouse != cursor_position || left_mouse_down || window.get_mouse_down(MouseButton::Right)
+            || !window.get_keys().is_empty() || window.get_scroll_wheel().is_some() {
+            last_activity = Instant::now();
+        }
+        cursor_position = mouse;
+        window.set_cursor_visibility(mouse.is_none());
+        display_buffer.copy_from_slice(&buffer);
+        if let Some(position) = mouse {
+            let (u, v) = mouse_uv(&window);
+            let hovered = match game.scene() {
+                SceneState::Exterior => portal_hovered(&window, &camera, &scene),
+                SceneState::Temple => exhibition_at(&camera, &scene.objects, u, v)
+                    .is_some_and(|id| game.exhibitions().can_enter(id)),
+                SceneState::MahavaipulyaChamber => library_page_at(&camera, &scene.objects, u, v).is_some()
+                    || library_challenge.phase() != LibraryPhase::Collecting,
+                SceneState::LuyangAcademy => academy_target_at(&camera, &scene.objects, u, v).is_some()
+                    || academy_challenge.phase() != AcademyPhase::Arranging,
+                SceneState::DesertPavilion => matches!(desert_challenge.phase(),
+                    DesertPhase::AccessSeal | DesertPhase::Complete | DesertPhase::Defeated),
+                SceneState::Puzzle => {
+                    let ray = camera.ray(u, v);
+                    scene.objects.iter().any(|object| object.name().starts_with("puzzle piece")
+                        && object.hit(&ray, 0.001, f32::INFINITY).is_some())
+                }
+                _ => false,
+            };
+            interface::cursor::draw(&mut display_buffer, IMAGE_WIDTH, IMAGE_HEIGHT, position,
+                hovered, left_mouse_down, game.scene() == SceneState::Final,
+                last_activity.elapsed().as_secs_f32());
+        }
+        window.update_with_buffer(&display_buffer, IMAGE_WIDTH, IMAGE_HEIGHT)?;
     }
 
     Ok(())
@@ -1118,7 +1165,7 @@ fn build_game_scene_at(
     let mut scene = if visual_state == SceneState::MemoryRestored {
         let sample = timeline.sample();
         let mut scene =
-            build_temple_interactive(sample.memory_state, sample.core_pose, false, sample.puzzle);
+            world::build_temple_view(sample.memory_state, sample.core_pose, false, sample.puzzle, Some(false));
         scene.light = sample.light;
         scene
     } else {
@@ -1127,11 +1174,12 @@ fn build_game_scene_at(
         } else {
             world::MemoryCorePose::default()
         };
-        build_temple_interactive(
+        world::build_temple_view(
             visual_state.memory_core(),
             core_pose,
             false,
             puzzle.layout(),
+            Some(visual_state == SceneState::Exterior),
         )
     };
     scene
@@ -1296,18 +1344,18 @@ fn draw_scene_labels(pixels: &mut [Vec3], state: SceneState, camera: &Camera) {
     }
     for (position, text, color) in [
         (
-            Vec3::new(-6.2, 3.48, -4.1),
-            "LUYANG - ARTE - CLICK/E",
+            Vec3::new(-3.4, 2.40, -2.0),
+            "ARTE - Click",
             Vec3::new(1.0, 0.62, 0.30),
         ),
         (
-            Vec3::new(6.2, 3.32, -4.1),
-            "MAHAVAIPULYA - TEXTOS - CLICK/E",
+            Vec3::new(3.4, 2.25, -2.0),
+            "BIBLIOTECA - Click",
             Vec3::new(0.48, 0.88, 1.0),
         ),
         (
-            Vec3::new(-6.2, 3.36, 3.8),
-            "DESERT PAVILION - CLICK/E",
+            Vec3::new(0.0, 1.95, 2.2),
+            "DESIERTO - Click",
             Vec3::new(1.0, 0.78, 0.30),
         ),
         (
@@ -1352,6 +1400,15 @@ fn set_indicator_pixel(pixels: &mut [Vec3], x: i32, y: i32, color: Vec3) {
     if x >= 0 && y >= 0 && x < IMAGE_WIDTH as i32 && y < IMAGE_HEIGHT as i32 {
         pixels[y as usize * IMAGE_WIDTH + x as usize] = color;
     }
+}
+
+fn portal_hovered(window: &Window, camera: &Camera, scene: &Scene) -> bool {
+    let (u, v) = mouse_uv(window);
+    let ray = camera.ray(u, v);
+    scene.objects.iter()
+        .filter_map(|object| object.hit(&ray, 0.001, f32::INFINITY))
+        .min_by(|a, b| a.t.total_cmp(&b.t))
+        .is_some_and(|hit| hit.object_name.starts_with("portal "))
 }
 
 fn mouse_uv(window: &Window) -> (f32, f32) {

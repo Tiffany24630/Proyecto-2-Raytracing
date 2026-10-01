@@ -88,9 +88,9 @@ pub fn build_library_room(collected_pages: [bool; 3], corruption: f32) -> Scene 
     }
 
     for (index, (position, size)) in [
-        (Vec3::new(-2.55, 0.35, -0.65), Vec3::new(0.92, 0.08, 0.66)),
-        (Vec3::new(2.45, 1.48, -1.85), Vec3::new(0.82, 0.08, 0.62)),
-        (Vec3::new(0.0, 2.32, -4.05), Vec3::new(0.96, 0.08, 0.68)),
+        (Vec3::new(-2.55, 0.35, -0.65), Vec3::new(0.78, 1.08, 0.035)),
+        (Vec3::new(2.45, 1.48, -1.85), Vec3::new(0.78, 1.08, 0.035)),
+        (Vec3::new(0.0, 2.32, -4.05), Vec3::new(0.78, 1.08, 0.035)),
     ]
     .into_iter()
     .enumerate()
@@ -101,7 +101,14 @@ pub fn build_library_room(collected_pages: [bool; 3], corruption: f32) -> Scene 
                 1 => "library page B",
                 _ => "library page C",
             };
-            add_cube(&mut objects, name, position, size, paper);
+            let mut page = paper;
+            page.albedo = Vec3::new(0.98, 0.94, 0.82);
+            page.texture_scale = 1.0;
+            page.texture_weight = 0.92;
+            page.reflectivity = 0.0;
+            page.specular = 0.02;
+            page.emission = Vec3::new(0.12, 0.10, 0.07);
+            add_cube(&mut objects, name, position, size, page);
         } else {
             add_cube(
                 &mut objects,

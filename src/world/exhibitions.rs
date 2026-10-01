@@ -201,5 +201,13 @@ fn add_cube(
     size: Vec3,
     material: Material,
 ) {
-    objects.push(Box::new(Cube::from_center(name, center, size, material)));
+    let (origin, destination) = if name.starts_with("luyang ") {
+        (Vec3::new(-6.2, 0.0, -4.25), Vec3::new(-3.4, 0.0, -2.0))
+    } else if name.starts_with("mahavaipulya ") {
+        (Vec3::new(6.2, 0.0, -4.25), Vec3::new(3.4, 0.0, -2.0))
+    } else {
+        (Vec3::new(-6.2, 0.0, 3.95), Vec3::new(0.0, -0.15, 2.2))
+    };
+    let center = (center - origin) * 0.64 + destination;
+    objects.push(Box::new(Cube::from_center(name, center, size * 0.64, material)));
 }

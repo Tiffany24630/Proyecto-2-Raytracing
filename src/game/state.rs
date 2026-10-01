@@ -121,7 +121,10 @@ impl SceneState {
             || name.starts_with("desert ");
 
         match self {
-            Self::Exterior => !interior_detail,
+            Self::Exterior => !interior_detail && (exterior_detail
+                || name.starts_with("portal ") || name == "temple floor"
+                || name == "temple stair" || name == "side wall"
+                || name == "rear wall" || name == "roof beam"),
             Self::Entering => true,
             Self::Temple => !exterior_detail && !puzzle_piece && !eye_aid,
             Self::Puzzle => !exterior_detail,

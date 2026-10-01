@@ -23,5 +23,5 @@ pub use portal::PortalView;
 pub use puzzle_pieces::{PuzzleLayout, PuzzlePieceId, PuzzlePiecePose};
 pub use scene::Scene;
 pub use skybox::temple_skybox;
-pub use temple::{build_temple, build_temple_interactive};
+pub use temple::{build_temple, build_temple_interactive, build_temple_view};
 pub use academy_room::build_academy_room;

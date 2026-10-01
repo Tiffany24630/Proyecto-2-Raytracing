@@ -1,3 +1,5 @@
+pub mod cursor;
+
 use crate::{
     game::{NarrativeMessage, SceneState},
     interaction::PieceStatus,
@@ -34,7 +36,7 @@ pub struct UiState {
 }
 
 pub fn draw_interface(pixels: &mut [Vec3], width: usize, height: usize, state: UiState) {
-    draw_panel(pixels, width, height, 0, 0, width, 29, 0.72);
+    draw_panel(pixels, width, height, 0, 0, width, 24, 0.64);
     draw_text(
         pixels,
         width,
@@ -42,7 +44,7 @@ pub fn draw_interface(pixels: &mut [Vec3], width: usize, height: usize, state: U
         8,
         7,
         "TEMPLE OF SPACE",
-        2,
+        1,
         Vec3::new(0.72, 0.90, 1.0),
     );
     let state_label = if state.scene == SceneState::Temple && state.hub_unlocked {
@@ -97,7 +99,7 @@ pub fn draw_interface(pixels: &mut [Vec3], width: usize, height: usize, state: U
         height.saturating_sub(15),
         &second_line,
         1,
-        Vec3::new(0.52, 0.76, 0.90),
+        Vec3::new(0.80, 0.86, 0.94),
     );
 }
 
@@ -165,7 +167,7 @@ fn draw_context_message(pixels: &mut [Vec3], width: usize, height: usize, state:
     let (heading, detail, color) = match state.scene {
         SceneState::Entering => (
             "ENTERING",
-            "ACCESSING PRESERVED MEMORY",
+            "ENTRANDO EN LA MEMORIA",
             Vec3::new(0.55, 0.88, 1.0),
         ),
         SceneState::Temple if state.eye_active => (
@@ -174,13 +176,13 @@ fn draw_context_message(pixels: &mut [Vec3], width: usize, height: usize, state:
             Vec3::new(0.32, 0.88, 1.0),
         ),
         SceneState::Puzzle => (
-            "MEMORY FRAGMENT",
+            "ALINEA LOS FRAGMENTOS",
             state.interaction_hint,
             Vec3::new(0.32, 0.86, 1.0),
         ),
         SceneState::MemoryRestored => (
-            "MEMORY RESTORED",
-            "THE SPACE REMEMBERS",
+            "MEMORIA RESTAURADA",
+            "EL ESPACIO RECUERDA",
             Vec3::new(0.22, 0.95, 0.92),
         ),
         SceneState::Final => (
@@ -189,8 +191,8 @@ fn draw_context_message(pixels: &mut [Vec3], width: usize, height: usize, state:
             Vec3::new(0.38, 0.94, 1.0),
         ),
         SceneState::Melanta => (
-            "MEMORY CORRUPTED",
-            "MELANTA INTERVENTION",
+            "MEMORIA CORRUPTA",
+            "ESPERA A QUE TERMINE LA INTERVENCION",
             Vec3::new(1.0, 0.10, 0.08),
         ),
         SceneState::DesertPavilion => (
@@ -210,12 +212,12 @@ fn draw_context_message(pixels: &mut [Vec3], width: usize, height: usize, state:
         ),
         _ => return,
     };
-    draw_centered_text(pixels, width, height, 38, heading, 2, color);
+    draw_centered_text(pixels, width, height, 34, heading, 1, color);
     draw_centered_text(
         pixels,
         width,
         height,
-        57,
+        48,
         detail,
         1,
         Vec3::new(0.86, 0.90, 1.0),
@@ -327,8 +329,8 @@ fn draw_puzzle_progress(pixels: &mut [Vec3], width: usize, height: usize, state:
 fn instructions(state: UiState) -> (String, String) {
     match state.scene {
         SceneState::Exterior => (
-            "E  CRUZAR MEMORY GATE     RMB / WASD  CAMARA".into(),
-            "RUEDA O + / -  ZOOM     ESC  SALIR".into(),
+            "Click EN LA PUERTA PARA ENTRAR AL SANTUARIO".into(),
+            "ARRASTRA CON BOTON DERECHO PARA MIRAR    H AYUDA".into(),
         ),
         SceneState::Entering => (
             "TRANSICION DEL PORTAL EN CURSO".into(),
@@ -336,13 +338,13 @@ fn instructions(state: UiState) -> (String, String) {
         ),
         SceneState::Temple => {
             let first = if state.eye_active {
-                "OJO ACTIVO     CLICK/E SOBRE MINIATURA PARA ENTRAR"
+                "Click EN UNA MINIATURA PARA VISITAR SU MUNDO"
             } else {
-                "TAB  ACTIVAR OJO DE DIOS     RMB / WASD  CAMARA"
+                "PULSA TAB PARA ACTIVAR EL OJO DE DIOS"
             };
             (
                 first.into(),
-                "E FUERA DE MINIATURA  VOLVER     RUEDA O + / -  ZOOM".into(),
+                "E FUERA DE MINIATURAS: VOLVER AL EXTERIOR    H AYUDA".into(),
             )
         }
         SceneState::Puzzle => {
@@ -352,8 +354,8 @@ fn instructions(state: UiState) -> (String, String) {
                 "OJO OFF"
             };
             (
-                "CLICK/E VINCULAR  ESC CANCELAR  R ROTAR".into(),
-                format!("FLECHAS MOVER  PGUP/PGDN ALTURA  RMB/WASD CAMARA  {eye}"),
+                "Click EN UNA PIEZA; FLECHAS PARA MOVERLA; R PARA GIRAR".into(),
+                format!("PGUP/PGDN ALTURA    ESC SOLTAR    H AYUDA    {eye}"),
             )
         }
         SceneState::MemoryRestored => {
@@ -382,16 +384,16 @@ fn instructions(state: UiState) -> (String, String) {
             )
         }
         SceneState::DesertPavilion => (
-            "R  ROTAR SELLO     E  ACTIVAR/CONFIRMAR     B  VOLVER AL TEMPLO".into(),
-            "RMB / WASD  CAMARA     SI APARECE MELANTA: NO TE MUEVAS".into(),
+            "R GIRA EL SELLO; Click LO ACTIVA    B VOLVER    H AYUDA".into(),
+            "SI APARECE MELANTA: SUELTA LOS CONTROLES Y ESPERA".into(),
         ),
         SceneState::MahavaipulyaChamber => (
-            "CLICK/E  RECOGER PAGINA     B  VOLVER AL TEMPLO".into(),
-            "REUNE 3 PAGINAS ANTES DE QUE EL TIEMPO LLEGUE A CERO".into(),
+            "Click SOBRE CADA PAGINA PARA RECOGERLA    B VOLVER".into(),
+            "REUNE LAS 3 ANTES DE QUE TERMINE EL TIEMPO    H AYUDA".into(),
         ),
         SceneState::LuyangAcademy => (
-            "CLICK/E SELECCIONAR     R MOVER DERECHA     B VOLVER".into(),
-            "CLICK/E SOBRE EL BOTON CENTRAL PARA CONFIRMAR".into(),
+            "Click ELIGE UNA PIEZA; R CAMBIA SU LUGAR    B VOLVER".into(),
+            "AL TERMINAR: Click EN EL BOTON CENTRAL    H AYUDA".into(),
         ),
         SceneState::Final => (
             "EPILOGO COMPLETADO     E  FINALIZAR".into(),
@@ -409,8 +411,11 @@ fn draw_centered_text(
     scale: usize,
     color: Vec3,
 ) {
+    let scale = scale.min((width.saturating_sub(16) / (text.chars().count().max(1) * 6)).max(1));
     let text_width = text.chars().count() * 6 * scale;
     let x = width.saturating_sub(text_width) / 2;
+    draw_panel(pixels, width, height, x.saturating_sub(5), y.saturating_sub(3),
+        text_width + 10, 7 * scale + 6, 0.76);
     draw_text(pixels, width, height, x, y, text, scale, color);
 }
 
@@ -549,8 +554,41 @@ fn glyph(character: char) -> [u8; 7] {
         '+' => [0, 4, 4, 31, 4, 4, 0],
         '-' => [0, 0, 0, 31, 0, 0, 0],
         '/' => [1, 2, 2, 4, 8, 8, 16],
+        ';' => [0, 4, 4, 0, 4, 4, 8],
+        '.' => [0, 0, 0, 0, 0, 6, 6],
+        '(' => [2, 4, 8, 8, 8, 4, 2],
+        ')' => [8, 4, 2, 2, 2, 4, 8],
         ':' => [0, 4, 4, 0, 4, 4, 0],
         '%' => [17, 2, 4, 4, 8, 16, 17],
         _ => [0; 7],
+    }
+}
+
+
+pub fn draw_help(pixels: &mut [Vec3], width: usize, height: usize) {
+    let lines = [
+        "CONTROLES - H CIERRA ESTA AYUDA",
+        "MUEVE EL RATON HASTA EL OBJETO Y HAZ Click IZQUIERDO",
+        "EL OJO DEL CURSOR BRILLA SOBRE ZONAS INTERACTIVAS",
+        "MANTEN BOTON DERECHO Y ARRASTRA PARA MIRAR",
+        "W A S D TAMBIEN GIRAN LA CAMARA",
+        "RUEDA DEL RATON O + / - ACERCAN Y ALEJAN",
+        "TAB ACTIVA EL OJO DE DIOS EN EL SANTUARIO",
+        "PUZZLE: Click ELIGE; FLECHAS MUEVEN; R GIRA",
+        "PGUP / PGDN SUBEN Y BAJAN; ESC SUELTA LA PIEZA",
+        "EN LAS SALAS: B REGRESA AL SANTUARIO",
+        "E CONSERVA SU ACCION COMO ATAJO DE TECLADO",
+        "P PAUSA ANIMACIONES; ESC SALE SI NO HAY SELECCION",
+        "MEMORIA RESTAURADA: ESPACIO PAUSA; T REPITE; M AVANZA",
+        "TRAS MELANTA: F RESTAURA; EN EL FINAL: E TERMINA",
+        "N REPITE LOS DIALOGOS DE ESTA ESCENA",
+        "ESTA AYUDA NO PAUSA EL TIEMPO DE LOS RETOS",
+    ];
+    let panel_height = lines.len() * 14 + 16;
+    let y = height.saturating_sub(panel_height) / 2;
+    draw_panel(pixels, width, height, 12, y, width.saturating_sub(24), panel_height, 0.97);
+    for (i, line) in lines.iter().enumerate() {
+        draw_text(pixels, width, height, 23, y + 9 + i * 14, line, 1,
+            if i == 0 { Vec3::new(1.0, 0.85, 0.48) } else { Vec3::new(0.92, 0.94, 0.98) });
     }
 }
