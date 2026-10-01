@@ -35,11 +35,6 @@ use world::{
 
 const IMAGE_WIDTH: usize = 576;
 const IMAGE_HEIGHT: usize = 324;
-// La previsualizaciÃ³n se usa en todos los fotogramas donde la cÃ¡mara se estÃ¡
-// moviendo. Antes era 400x225 (~48% de los pÃ­xeles de la imagen final); se
-// sube a 480x270 (~69%) porque, al no tener rayos secundarios (max_depth 0),
-// sigue siendo mucho mÃ¡s barata que el render completo, pero el escalado
-// bilineal a resoluciÃ³n final se nota bastante menos "pixelado".
 const PREVIEW_WIDTH: usize = 480;
 const PREVIEW_HEIGHT: usize = 270;
 const INTERACTIVE_MAX_DEPTH: u32 = 2;
@@ -55,22 +50,8 @@ const MOUSE_WHEEL_ZOOM_STEP: f32 = 0.35;
 const SKY_TRANSITION_SECONDS: f32 = 3.0;
 const MELANTA_REVEAL_DELAY_SECONDS: f32 = 2.0;
 const PORTAL_TRANSITION_SECONDS: f32 = 2.4;
-// 30 Hz limitaba cuÃ¡ntas veces por segundo se leÃ­a el teclado/ratÃ³n y se
-// dibujaba un fotograma nuevo. Con la previsualizaciÃ³n de baja resoluciÃ³n
-// (mucho mÃ¡s barata que el render completo) el cuello de botella real no es
-// el trazado de rayos sino este lÃ­mite artificial, asÃ­ que subirlo deja que
-// el movimiento de cÃ¡mara se sienta continuo en vez de a "tirones".
 const UI_TARGET_FPS: usize = 60;
 const FULL_QUALITY_DELAY: Duration = Duration::from_millis(100);
-// Cada cuÃ¡ntos segundos como mÃ­nimo se vuelve a trazar la escena solo para
-// avanzar la animaciÃ³n ambiental (nÃºcleo giratorio y cristales flotantes en
-// el templo; la respiraciÃ³n y el parpadeo de Melanta en cualquier sala donde
-// aparezca; el flotar sereno de Nihilita en el epÃ­logo). Si un render tarda
-// mÃ¡s de la mitad de este intervalo, el siguiente cuadro de animaciÃ³n se
-// retrasa el doble de lo que tardÃ³, de modo que la animaciÃ³n nunca deja al
-// bucle sin tiempo para leer el teclado/ratÃ³n.
-// Instante (en segundos) en el que se congela la animaciÃ³n ambiental al generar
-// las capturas `--render-once`.
 const CHECKPOINT_AMBIENT_TIME: f32 = 1.2;
 const ANIMATION_INTERVAL: Duration = Duration::from_millis(90);
 const MAX_ANIMATION_DELTA_SECONDS: f32 = 0.25;
@@ -195,10 +176,6 @@ fn render_checkpoint(
     let desert_challenge = DesertChallenge::default();
     let library_challenge = LibraryChallenge::default();
     let academy_challenge = AcademyChallenge::default();
-    // Las capturas usan siempre un instante animado (no 0.0): asÃ­ el templo,
-    // Melanta y el epÃ­logo salen a media animaciÃ³n en vez de en la pose
-    // estÃ¡tica de reposo. La luz de acento del Memory Core sigue siendo
-    // exclusiva del templo.
     let scene = build_game_scene_at(
         game,
         puzzle,
@@ -270,12 +247,10 @@ fn run_interactive(
     renderer: &Renderer,
     textures: &TextureSet,
 ) -> Result<(), Box<dyn Error>> {
-    // Dos variantes de la misma resoluciÃ³n/profundidad: `interactive_renderer`
-    // (sin antialiasing) se usa mientras la animaciÃ³n ambiental del templo
-    // sigue en marcha, para no pagar el costo extra del antialiasing en cada
-    // uno de esos redibujados; `refine_renderer` (con antialiasing) se usa
-    // para el cuadro nÃ­tido de reposo, cuando ni la cÃ¡mara ni la animaciÃ³n se
-    // estÃ¡n moviendo, exactamente igual que antes de aÃ±adir la animaciÃ³n.
+    let mut audio = audio::AudioDirector::new();
+    audio.play_music_for(SceneState::Exterior);
+    let mut audio_scene = SceneState::Exterior;
+    let mut melanta_was_visible = false;
     let interactive_renderer =
         Renderer::new(IMAGE_WIDTH, IMAGE_HEIGHT, Vec3::new(0.20, 0.31, 0.54))
             .with_max_depth(INTERACTIVE_MAX_DEPTH);
@@ -397,8 +372,6 @@ fn run_interactive(
             changed = true;
         }
         if window.is_key_pressed(Key::P, KeyRepeat::No) {
-            // Pausa/reanuda la animaciÃ³n ambiental. Al pausar se renderiza un
-            // cuadro limpio (con antialiasing) que queda fijo hasta reanudar.
             animations_enabled = !animations_enabled;
             changed = true;
             force_full_render = true;
@@ -418,6 +391,7 @@ fn run_interactive(
                 SceneState::Exterior => {
                     if (interact_pressed || portal_hovered(&window, &camera, &scene))
                         && game.handle(GameEvent::UsePortal) {
+                        audio.play_effect(audio::SoundEffect::DoorOpen);
                         println!("State: {}", game.scene().label());
                         portal_start_camera = camera;
                         portal_end_camera = PortalView::Interior.camera(ASPECT_RATIO);
@@ -440,6 +414,7 @@ fn run_interactive(
                         if let Some(destination_view) = destination_view
                             && game.handle(GameEvent::EnterExhibition(exhibition))
                         {
+                            audio.enter_exhibition(exhibition);
                             match exhibition {
                                 ExhibitionId::DesertPavilion => desert_challenge.restart(),
                                 ExhibitionId::MahavaipulyaChamber => library_challenge.restart(),
@@ -493,6 +468,7 @@ fn run_interactive(
                     let (u, v) = mouse_uv(&window);
                     if let Some(page) = library_page_at(&camera, &scene.objects, u, v) {
                         if library_challenge.collect(page) {
+                            audio.play_effect(audio::SoundEffect::PageCollect);
                             changed = true;
                             scene_changed = true;
                         }
@@ -601,6 +577,7 @@ fn run_interactive(
             && window.is_key_pressed(Key::R, KeyRepeat::No)
             && academy_challenge.move_selected_right()
         {
+            audio.play_effect(audio::SoundEffect::PaintingMove);
             changed = true;
             scene_changed = true;
         }
@@ -708,11 +685,23 @@ fn run_interactive(
 
         let camera_moved =
             camera_pose_before_input != (camera.yaw(), camera.pitch(), camera.radius());
+        let lives_before_update = desert_challenge.lives();
         if game.scene() == SceneState::DesertPavilion
             && desert_challenge.update(delta_seconds, camera_moved)
         {
+            if desert_challenge.lives() < lives_before_update {
+                audio.play_effect(audio::SoundEffect::DesertLifeLost);
+            }
             changed = true;
             scene_changed = true;
+        }
+
+        if game.scene() != audio_scene {
+            audio.play_music_for(game.scene());
+            if game.scene() == SceneState::Melanta {
+                audio.play_effect(audio::SoundEffect::MelantaAppear);
+            }
+            audio_scene = game.scene();
         }
         if game.scene() == SceneState::MahavaipulyaChamber {
             let update = library_challenge.update(delta_seconds);
@@ -783,9 +772,6 @@ fn run_interactive(
             changed = true;
         }
 
-        // AdemÃ¡s del templo (Memory Core + cristales), estas escenas tambiÃ©n
-        // tienen animaciÃ³n ambiental: Melanta respira y su ojo parpadea en
-        // cualquier sala donde aparezca, y Nihilita flota en el epÃ­logo.
         let melanta_active = match game.scene() {
             SceneState::Melanta => true,
             SceneState::DesertPavilion => desert_challenge.melanta_visible(),
@@ -793,15 +779,16 @@ fn run_interactive(
             SceneState::MahavaipulyaChamber => library_challenge.phase() == LibraryPhase::Defeated,
             _ => false,
         };
+        if melanta_active && !melanta_was_visible && game.scene() != SceneState::Melanta {
+            audio.play_effect(audio::SoundEffect::MelantaAppear);
+        }
+        melanta_was_visible = melanta_active;
         let animating = animations_enabled
             && (game.scene() == SceneState::Temple
                 || game.scene() == SceneState::Final
                 || melanta_active);
         if animating {
             anim_time += delta_seconds.min(MAX_ANIMATION_DELTA_SECONDS);
-            // Cualquier cuadro que se vaya a dibujar (por cÃ¡mara o por el
-            // temporizador de animaciÃ³n) reconstruye la escena con el tiempo
-            // actual, para que el movimiento no se congele mientras se orbita.
             if changed || Instant::now() >= next_animation_at {
                 changed = true;
                 scene_changed = true;
@@ -809,10 +796,6 @@ fn run_interactive(
         }
 
         if scene_changed {
-            // `anim_time` solo avanza mientras `animating` es verdadero (arriba),
-            // asÃ­ que pasarlo siempre, incluso en pausa o fuera de una escena
-            // animada, deja la pose congelada donde quedÃ³ en vez de saltar de
-            // vuelta a la pose por defecto.
             scene = build_game_scene_at(
                 game,
                 puzzle,
@@ -874,13 +857,6 @@ fn run_interactive(
                     )
                 } else {
                     refine_at = None;
-                    // Mientras la animaciÃ³n ambiental sigue corriendo, cada
-                    // redibujado paga por sÃ­ solo el costo del render
-                    // completo (profundidad 2, luz de acento); sumarle encima
-                    // el antialiasing de bordes en cada uno de esos cuadros
-                    // era lo que sentÃ­a lenta la escena del templo. Solo se
-                    // usa `refine_renderer` (con antialiasing) para el cuadro
-                    // realmente quieto, sin animaciÃ³n en marcha.
                     let renderer = if animating {
                         &interactive_renderer
                     } else {
@@ -927,7 +903,9 @@ fn run_interactive(
             if help_visible {
                 interface::draw_help(&mut pixels, IMAGE_WIDTH, IMAGE_HEIGHT);
             }
-            apply_white_fade(&mut pixels, portal_transition.white_opacity());
+            if game.scene() == SceneState::Entering {
+                interface::draw_loading(&mut pixels, IMAGE_WIDTH, IMAGE_HEIGHT, portal_transition.progress());
+            }
             buffer = renderer.to_u32_buffer(&pixels);
             window.set_title(&window_title(game, sky_corruption, &camera));
         }
@@ -1094,13 +1072,6 @@ fn build_game_scene(
     )
 }
 
-/// Igual que `build_game_scene`, pero animada segÃºn `time` (segundos,
-/// reloj determinista de la animaciÃ³n ambiental): en el templo el Memory Core
-/// gira y flotan cristales a su alrededor; en cualquier escena donde aparece
-/// la figura de Melanta, esta respira y su ojo parpadea; en el epÃ­logo,
-/// Nihilita flota serenamente. Cuando la animaciÃ³n estÃ¡ en pausa `time`
-/// simplemente deja de avanzar, asÃ­ que la pose queda congelada donde estaba
-/// en vez de saltar de vuelta a la pose por defecto.
 fn build_game_scene_at(
     game: GameState,
     puzzle: Puzzle,
@@ -1229,7 +1200,6 @@ fn render_scene(
     }
 }
 
-/// Luz de acento dorada: solo el templo la usa, animada segÃºn `time`.
 fn scene_accent_light(state: SceneState, time: f32) -> Option<Light> {
     (state == SceneState::Temple).then(|| world::ambient_accent_light(time))
 }

@@ -308,6 +308,8 @@ fn add_portal(
             Vec3::new(0.12, 3.95, 0.12), stone);
         add_cube(objects, "portal foot", Vec3::new(x, -0.30, 8.65),
             Vec3::new(0.70, 0.48, 0.90), metal);
+        add_cube(objects, "portal capital", Vec3::new(x, 3.36, 8.65),
+            Vec3::new(0.82, 0.42, 0.90), stone);
     }
     for step in 0..18 {
         let t = step as f32 / 18.0;
@@ -335,6 +337,16 @@ fn add_portal(
     crystal.texture_scale = 1.0;
     add_cube(objects, "portal membrane", Vec3::new(0.0, 1.46, 8.65),
         Vec3::new(2.86, 3.96, 0.18), crystal);
+    add_cube(objects, "portal central seam", Vec3::new(0.0, 1.46, 8.50),
+        Vec3::new(0.075, 3.82, 0.08), metal);
+    let mut sigil = crystal;
+    sigil.albedo = Vec3::new(0.12, 0.90, 1.0);
+    sigil.emission = Vec3::new(0.10, 0.52, 0.70);
+    sigil.texture_weight = 0.0;
+    for (x, y, width) in [(0.0, 1.75, 0.88), (-0.38, 1.42, 0.44), (0.38, 1.42, 0.44)] {
+        add_cube(objects, "portal cyan sigil", Vec3::new(x, y, 8.48),
+            Vec3::new(width, 0.08, 0.08), sigil);
+    }
 }
 
 fn add_memory_pedestal(

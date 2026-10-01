@@ -102,8 +102,8 @@ pub fn build_academy_room(order: [u8; 3], selected: Option<u8>) -> Scene {
     add_cube(
         &mut objects,
         "academy confirm button",
-        Vec3::new(0.0, -0.12, -1.65),
-        Vec3::new(0.62, 0.14, 0.62),
+        Vec3::new(0.0, -0.04, -1.65),
+        Vec3::new(0.98, 0.16, 0.98),
         crystal,
     );
 

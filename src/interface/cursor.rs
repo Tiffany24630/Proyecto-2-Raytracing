@@ -1,7 +1,25 @@
+use std::sync::OnceLock;
+
+struct CursorTexture { width: usize, height: usize, pixels: Vec<[u8; 4]> }
+
+fn texture() -> &'static Option<CursorTexture> {
+    static CURSOR: OnceLock<Option<CursorTexture>> = OnceLock::new();
+    CURSOR.get_or_init(|| {
+        let image = image::open("assets/textures/cursor_nihilita.png").ok()?.to_rgba8();
+        let (width, height) = image.dimensions();
+        Some(CursorTexture { width: width as usize, height: height as usize,
+            pixels: image.pixels().map(|pixel| pixel.0).collect() })
+    })
+}
+
 pub fn draw(
     buffer: &mut [u32], width: usize, height: usize, position: (f32, f32),
     hovered: bool, pressed: bool, final_scene: bool, idle: f32,
 ) {
+    if let Some(texture) = texture() {
+        draw_texture(buffer, width, height, position, texture, hovered, pressed, final_scene, idle);
+        return;
+    }
     let gold = if final_scene { 0x8eeeff } else { 0xe8bd58 };
     let red = if final_scene { 0x388ac4 } else { 0xa52e13 };
     let pulse = if idle > 5.0 { ((idle - 5.0) * 2.0).sin() } else { 0.0 };
@@ -43,6 +61,25 @@ pub fn draw(
                 }
             }
             if let Some(color) = color { buffer[py as usize * width + px as usize] = color; }
+        }
+    }
+}
+
+fn draw_texture(buffer: &mut [u32], width: usize, height: usize, position: (f32, f32),
+    texture: &CursorTexture, hovered: bool, pressed: bool, final_scene: bool, idle: f32) {
+    let state = if final_scene { 3 } else if pressed { 2 } else if hovered { 1 } else { 0 };
+    let frame_width = texture.width / 4;
+    let bob = if idle > 5.0 { ((idle - 5.0) * 2.0).sin() as i32 } else { 0 };
+    for y in 0..texture.height {
+        for x in 0..frame_width {
+            let pixel = texture.pixels[y * texture.width + state * frame_width + x];
+            if pixel[3] < 16 { continue; }
+            let target_x = position.0 as i32 + x as i32 - 12;
+            let target_y = position.1 as i32 + y as i32 - 5 + bob;
+            if target_x >= 0 && target_y >= 0 && target_x < width as i32 && target_y < height as i32 {
+                buffer[target_y as usize * width + target_x as usize] =
+                    ((pixel[0] as u32) << 16) | ((pixel[1] as u32) << 8) | pixel[2] as u32;
+            }
         }
     }
 }

@@ -104,7 +104,7 @@ impl TextureSet {
     pub fn load_from_directory(directory: impl AsRef<Path>) -> ImageResult<Self> {
         let directory = directory.as_ref();
         Ok(Self {
-            paper: Texture::generated(256, 384, |u, v| {
+            paper: Texture::load(directory.join("library_page.png")).unwrap_or_else(|_| Texture::generated(256, 384, |u, v| {
                 let grain = ((u * 1921.0 + v * 7919.0).sin() * 43758.545).fract().abs();
                 let edge = u.min(1.0 - u).min(v.min(1.0 - v));
                 let base = Vec3::new(0.94, 0.88, 0.70) * (0.91 + grain * 0.09);
@@ -117,19 +117,21 @@ impl TextureSet {
                 else if ornament { Vec3::new(0.56, 0.37, 0.14) }
                 else if edge < 0.04 { base * 0.78 }
                 else { base }
-            }),
-            gate: Texture::generated(384, 512, |u, v| {
+            })),
+            gate: Texture::load(directory.join("domain_door.png")).unwrap_or_else(|_| Texture::generated(384, 512, |u, v| {
                 let x = (u - 0.5).abs() * 2.0;
                 let grain = (u * 1631.0 + v * 3917.0).sin() * 0.015;
-                let curve = 0.43 + 0.21 * (v * std::f32::consts::TAU * 2.0).cos();
-                let border = (x - 0.91).abs() < 0.018 || (v - 0.045).abs() < 0.009;
-                let scroll = (x - curve).abs() < 0.025 && v > 0.08 && v < 0.94;
-                let diamond = (x * 0.65 + (v - 0.50).abs() * 3.0 - 0.24).abs() < 0.034;
-                let lily = x < 0.075 + 0.075 * (v * 46.0).cos() && ((v - 0.29).abs() < 0.08 || (v - 0.80).abs() < 0.09);
-                if border || scroll || diamond || lily {
-                    Vec3::new(0.65 + grain, 0.61 + grain, 0.48 + grain)
-                } else { Vec3::new(0.095 + grain, 0.078 + grain, 0.11 + grain) }
-            }),
+                let border = x > 0.93 || u < 0.035 || u > 0.965 || v < 0.025 || v > 0.97;
+                let seam = x < 0.018;
+                let panel = ((u * 2.0).fract() - 0.5).abs() + (v - 0.48).abs() * 0.82;
+                let carved = (panel - 0.31).abs() < 0.014 || (panel - 0.48).abs() < 0.012;
+                let triangle = (x * 0.78 + (v - 0.50).abs() * 1.16 - 0.26).abs() < 0.018
+                    && v > 0.25 && v < 0.72;
+                if triangle { Vec3::new(0.12, 0.88, 1.0) }
+                else if border || carved { Vec3::new(0.68 + grain, 0.55 + grain, 0.25 + grain) }
+                else if seam { Vec3::new(0.08, 0.38, 0.48) }
+                else { Vec3::new(0.20 + grain, 0.31 + grain, 0.40 + grain) }
+            })),
             grass: Texture::load(directory.join("grass.png"))?,
             stone: Texture::load(directory.join("stone_celestial.png"))?,
             wood: Texture::load(directory.join("wood.png"))?,

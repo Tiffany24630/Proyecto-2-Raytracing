@@ -29,7 +29,7 @@ impl PortalView {
                 aspect_ratio,
             ),
             Self::DesertPavilion => Camera::orbital(
-                Vec3::new(0.0, 1.35, -3.25),
+                Vec3::new(0.0, 1.55, -3.8),
                 7.2,
                 0.0,
                 5.0_f32.to_radians(),
