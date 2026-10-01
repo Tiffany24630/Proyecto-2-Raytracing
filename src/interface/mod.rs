@@ -142,6 +142,46 @@ pub fn draw_narrative(
     );
 }
 
+pub fn draw_loading(pixels: &mut [Vec3], width: usize, height: usize, progress: f32) {
+    draw_panel(pixels, width, height, 0, 0, width, height, 0.91);
+    draw_centered_text(pixels, width, height, 72, "SANTUARIO DE LOS RECUERDOS", 2, Vec3::new(0.72, 0.88, 1.0));
+    draw_centered_text(pixels, width, height, 101, "CARGANDO MEMORIA PRESERVADA", 1, Vec3::new(0.86, 0.90, 0.96));
+    let center_x = width / 2;
+    let center_y = 162_i32;
+    let elements = [
+        Vec3::new(0.42, 0.86, 1.0), Vec3::new(0.34, 0.70, 0.92),
+        Vec3::new(0.34, 0.94, 0.72), Vec3::new(0.92, 0.74, 0.30),
+        Vec3::new(0.80, 0.48, 0.94), Vec3::new(1.0, 0.48, 0.34),
+        Vec3::new(0.92, 0.88, 0.62),
+    ];
+    for (index, color) in elements.into_iter().enumerate() {
+        let angle = index as f32 * std::f32::consts::TAU / 7.0 - std::f32::consts::FRAC_PI_2;
+        let x = center_x as i32 + (angle.cos() * 49.0) as i32;
+        let y = center_y + (angle.sin() * 31.0) as i32;
+        draw_element_mark(pixels, width, height, x, y, color);
+    }
+    draw_element_mark(pixels, width, height, center_x as i32, center_y, Vec3::new(0.72, 0.94, 1.0));
+    let bar_width = 220;
+    let bar_x = width.saturating_sub(bar_width) / 2;
+    draw_panel(pixels, width, height, bar_x, 234, bar_width, 7, 0.7);
+    fill_rect(pixels, width, height, bar_x + 2, 236,
+        ((bar_width - 4) as f32 * progress.clamp(0.0, 1.0)) as usize, 2, Vec3::new(0.40, 0.86, 1.0));
+}
+
+fn draw_element_mark(pixels: &mut [Vec3], width: usize, height: usize, x: i32, y: i32, color: Vec3) {
+    for offset in -7..=7 {
+        set_ui_pixel(pixels, width, height, x + offset, y, color);
+        set_ui_pixel(pixels, width, height, x, y + offset, color);
+        set_ui_pixel(pixels, width, height, x + offset / 2, y + offset, color);
+    }
+}
+
+fn set_ui_pixel(pixels: &mut [Vec3], width: usize, height: usize, x: i32, y: i32, color: Vec3) {
+    if x >= 0 && y >= 0 && x < width as i32 && y < height as i32 {
+        pixels[y as usize * width + x as usize] = color;
+    }
+}
+
 pub fn draw_world_label(
     pixels: &mut [Vec3],
     width: usize,
