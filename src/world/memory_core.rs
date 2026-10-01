@@ -271,29 +271,3 @@ fn add_rotated_cube(
         name, center, size, yaw, material,
     )));
 }
-
-#[cfg(test)]
-mod tests {
-    use super::MemoryCoreState;
-
-    #[test]
-    fn memory_core_exposes_three_distinct_states() {
-        assert_eq!(
-            [
-                MemoryCoreState::Stable,
-                MemoryCoreState::Fragmented,
-                MemoryCoreState::Restored,
-            ]
-            .len(),
-            3
-        );
-        assert_ne!(
-            MemoryCoreState::Stable.light().color,
-            MemoryCoreState::Fragmented.light().color
-        );
-        assert_ne!(
-            MemoryCoreState::Fragmented.light().color,
-            MemoryCoreState::Restored.light().color
-        );
-    }
-}

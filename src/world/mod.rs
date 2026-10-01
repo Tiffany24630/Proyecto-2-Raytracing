@@ -1,4 +1,5 @@
 mod academy_room;
+mod ambient;
 mod desert_room;
 mod exhibitions;
 mod exterior;
@@ -12,6 +13,7 @@ mod scene;
 mod skybox;
 mod temple;
 
+pub use ambient::{add_ambient_shards, ambient_accent_light, ambient_core_pose};
 pub use desert_room::build_desert_room_with_seal;
 pub use library_room::build_library_room;
 pub use melanta::{add_melanta_event, melanta_light, melanta_transition_light};

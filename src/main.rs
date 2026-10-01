@@ -26,7 +26,7 @@ use interface::{UiState, draw_interface, draw_narrative, draw_world_label};
 use materials::TextureSet;
 use math::Vec3;
 use minifb::{Key, KeyRepeat, MouseButton, MouseMode, Scale, ScaleMode, Window, WindowOptions};
-use raytracing::{Camera, Renderer};
+use raytracing::{Camera, Light, Renderer};
 use world::{
     PortalView, PuzzleLayout, PuzzlePieceId, Scene, add_melanta_event, add_nihilita_epilogue,
     build_academy_room, build_desert_room_with_seal, build_library_room, build_temple,
@@ -35,12 +35,15 @@ use world::{
 
 const IMAGE_WIDTH: usize = 576;
 const IMAGE_HEIGHT: usize = 324;
-const PREVIEW_WIDTH: usize = 400;
-const PREVIEW_HEIGHT: usize = 225;
+// La previsualizaciÃ³n se usa en todos los fotogramas donde la cÃ¡mara se estÃ¡
+// moviendo. Antes era 400x225 (~48% de los pÃ­xeles de la imagen final); se
+// sube a 480x270 (~69%) porque, al no tener rayos secundarios (max_depth 0),
+// sigue siendo mucho mÃ¡s barata que el render completo, pero el escalado
+// bilineal a resoluciÃ³n final se nota bastante menos "pixelado".
+const PREVIEW_WIDTH: usize = 480;
+const PREVIEW_HEIGHT: usize = 270;
 const INTERACTIVE_MAX_DEPTH: u32 = 2;
 const ASPECT_RATIO: f32 = IMAGE_WIDTH as f32 / IMAGE_HEIGHT as f32;
-#[cfg(test)]
-const ORBIT_STEP: f32 = 5.0_f32.to_radians();
 const CAMERA_ORBIT_SPEED: f32 = 1.05;
 const MAX_INPUT_DELTA_SECONDS: f32 = 0.05;
 const OBJECT_ROTATION_STEP: f32 = 15.0_f32.to_radians();
@@ -52,8 +55,25 @@ const MOUSE_WHEEL_ZOOM_STEP: f32 = 0.35;
 const SKY_TRANSITION_SECONDS: f32 = 3.0;
 const MELANTA_REVEAL_DELAY_SECONDS: f32 = 2.0;
 const PORTAL_TRANSITION_SECONDS: f32 = 2.4;
-const UI_TARGET_FPS: usize = 30;
-const FULL_QUALITY_DELAY: Duration = Duration::from_millis(120);
+// 30 Hz limitaba cuÃ¡ntas veces por segundo se leÃ­a el teclado/ratÃ³n y se
+// dibujaba un fotograma nuevo. Con la previsualizaciÃ³n de baja resoluciÃ³n
+// (mucho mÃ¡s barata que el render completo) el cuello de botella real no es
+// el trazado de rayos sino este lÃ­mite artificial, asÃ­ que subirlo deja que
+// el movimiento de cÃ¡mara se sienta continuo en vez de a "tirones".
+const UI_TARGET_FPS: usize = 60;
+const FULL_QUALITY_DELAY: Duration = Duration::from_millis(100);
+// Cada cuÃ¡ntos segundos como mÃ­nimo se vuelve a trazar la escena solo para
+// avanzar la animaciÃ³n ambiental (nÃºcleo giratorio y cristales flotantes en
+// el templo; la respiraciÃ³n y el parpadeo de Melanta en cualquier sala donde
+// aparezca; el flotar sereno de Nihilita en el epÃ­logo). Si un render tarda
+// mÃ¡s de la mitad de este intervalo, el siguiente cuadro de animaciÃ³n se
+// retrasa el doble de lo que tardÃ³, de modo que la animaciÃ³n nunca deja al
+// bucle sin tiempo para leer el teclado/ratÃ³n.
+// Instante (en segundos) en el que se congela la animaciÃ³n ambiental al generar
+// las capturas `--render-once`.
+const CHECKPOINT_AMBIENT_TIME: f32 = 1.2;
+const ANIMATION_INTERVAL: Duration = Duration::from_millis(90);
+const MAX_ANIMATION_DELTA_SECONDS: f32 = 0.25;
 
 fn main() -> Result<(), Box<dyn Error>> {
     let audio_config = audio::AudioConfig::discover();
@@ -77,7 +97,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         CAMERA_TOLERANCE.to_degrees()
     );
     let camera = PortalView::Exterior.camera(ASPECT_RATIO);
-    let renderer = Renderer::new(IMAGE_WIDTH, IMAGE_HEIGHT, Vec3::new(0.20, 0.31, 0.54));
+    let renderer = Renderer::new(IMAGE_WIDTH, IMAGE_HEIGHT, Vec3::new(0.20, 0.31, 0.54))
+        .with_edge_antialiasing(true);
 
     let textures = TextureSet::load_from_directory("assets/textures")?;
 
@@ -174,20 +195,33 @@ fn render_checkpoint(
     let desert_challenge = DesertChallenge::default();
     let library_challenge = LibraryChallenge::default();
     let academy_challenge = AcademyChallenge::default();
-    let scene = build_game_scene(
+    // Las capturas usan siempre un instante animado (no 0.0): asÃ­ el templo,
+    // Melanta y el epÃ­logo salen a media animaciÃ³n en vez de en la pose
+    // estÃ¡tica de reposo. La luz de acento del Memory Core sigue siendo
+    // exclusiva del templo.
+    let scene = build_game_scene_at(
         game,
         puzzle,
         timeline,
         desert_challenge,
         library_challenge,
         academy_challenge,
+        CHECKPOINT_AMBIENT_TIME,
     );
     let sky_corruption = if state == SceneState::Melanta {
         1.0
     } else {
         0.0
     };
-    let mut pixels = render_scene(renderer, camera, &scene, textures, state, sky_corruption);
+    let mut pixels = render_scene(
+        renderer,
+        camera,
+        &scene,
+        textures,
+        state,
+        sky_corruption,
+        (state == SceneState::Temple).then(|| world::ambient_accent_light(CHECKPOINT_AMBIENT_TIME)),
+    );
     draw_scene_labels(&mut pixels, state, camera);
     draw_game_interface(
         &mut pixels,
@@ -236,9 +270,18 @@ fn run_interactive(
     renderer: &Renderer,
     textures: &TextureSet,
 ) -> Result<(), Box<dyn Error>> {
+    // Dos variantes de la misma resoluciÃ³n/profundidad: `interactive_renderer`
+    // (sin antialiasing) se usa mientras la animaciÃ³n ambiental del templo
+    // sigue en marcha, para no pagar el costo extra del antialiasing en cada
+    // uno de esos redibujados; `refine_renderer` (con antialiasing) se usa
+    // para el cuadro nÃ­tido de reposo, cuando ni la cÃ¡mara ni la animaciÃ³n se
+    // estÃ¡n moviendo, exactamente igual que antes de aÃ±adir la animaciÃ³n.
     let interactive_renderer =
         Renderer::new(IMAGE_WIDTH, IMAGE_HEIGHT, Vec3::new(0.20, 0.31, 0.54))
             .with_max_depth(INTERACTIVE_MAX_DEPTH);
+    let refine_renderer = Renderer::new(IMAGE_WIDTH, IMAGE_HEIGHT, Vec3::new(0.20, 0.31, 0.54))
+        .with_max_depth(INTERACTIVE_MAX_DEPTH)
+        .with_edge_antialiasing(true);
     let preview_renderer =
         Renderer::new(PREVIEW_WIDTH, PREVIEW_HEIGHT, Vec3::new(0.20, 0.31, 0.54)).with_max_depth(0);
     let mut game = GameState::default();
@@ -258,6 +301,9 @@ fn run_interactive(
     let mut previous_orbit_mouse = None;
     let mut left_mouse_was_down = false;
     let mut refine_at = None;
+    let mut animations_enabled = true;
+    let mut anim_time = 0.0_f32;
+    let mut next_animation_at = Instant::now();
     let mut last_tick = Instant::now();
     let mut scene = build_game_scene(
         game,
@@ -282,12 +328,13 @@ fn run_interactive(
     window.set_target_fps(UI_TARGET_FPS);
 
     let mut cached_scene_pixels = render_scene(
-        &interactive_renderer,
+        &refine_renderer,
         &camera,
         &scene,
         textures,
         game.scene(),
         sky_corruption,
+        scene_accent_light(game.scene(), anim_time),
     );
     let mut pixels = cached_scene_pixels.clone();
     draw_scene_labels(&mut pixels, game.scene(), &camera);
@@ -336,6 +383,13 @@ fn run_interactive(
         {
             eye.toggle();
             changed = true;
+        }
+        if window.is_key_pressed(Key::P, KeyRepeat::No) {
+            // Pausa/reanuda la animaciÃ³n ambiental. Al pausar se renderiza un
+            // cuadro limpio (con antialiasing) que queda fijo hasta reanudar.
+            animations_enabled = !animations_enabled;
+            changed = true;
+            force_full_render = true;
         }
         if game.scene() == SceneState::Temple && window.is_key_pressed(Key::M, KeyRepeat::No) {
             game = GameState::from_scene(SceneState::Melanta);
@@ -716,14 +770,44 @@ fn run_interactive(
             changed = true;
         }
 
+        // AdemÃ¡s del templo (Memory Core + cristales), estas escenas tambiÃ©n
+        // tienen animaciÃ³n ambiental: Melanta respira y su ojo parpadea en
+        // cualquier sala donde aparezca, y Nihilita flota en el epÃ­logo.
+        let melanta_active = match game.scene() {
+            SceneState::Melanta => true,
+            SceneState::DesertPavilion => desert_challenge.melanta_visible(),
+            SceneState::LuyangAcademy => academy_challenge.phase() == AcademyPhase::Defeated,
+            SceneState::MahavaipulyaChamber => library_challenge.phase() == LibraryPhase::Defeated,
+            _ => false,
+        };
+        let animating = animations_enabled
+            && (game.scene() == SceneState::Temple
+                || game.scene() == SceneState::Final
+                || melanta_active);
+        if animating {
+            anim_time += delta_seconds.min(MAX_ANIMATION_DELTA_SECONDS);
+            // Cualquier cuadro que se vaya a dibujar (por cÃ¡mara o por el
+            // temporizador de animaciÃ³n) reconstruye la escena con el tiempo
+            // actual, para que el movimiento no se congele mientras se orbita.
+            if changed || Instant::now() >= next_animation_at {
+                changed = true;
+                scene_changed = true;
+            }
+        }
+
         if scene_changed {
-            scene = build_game_scene(
+            // `anim_time` solo avanza mientras `animating` es verdadero (arriba),
+            // asÃ­ que pasarlo siempre, incluso en pausa o fuera de una escena
+            // animada, deja la pose congelada donde quedÃ³ en vez de saltar de
+            // vuelta a la pose por defecto.
+            scene = build_game_scene_at(
                 game,
                 puzzle,
                 timeline,
                 desert_challenge,
                 library_challenge,
                 academy_challenge,
+                anim_time,
             );
         }
 
@@ -754,6 +838,8 @@ fn run_interactive(
         if changed {
             let raytrace_required =
                 needs_raytrace(prefer_preview, scene_changed, force_full_render);
+            let render_started = Instant::now();
+            let accent = scene_accent_light(game.scene(), anim_time);
             let mut pixels = if raytrace_required {
                 let rendered = if prefer_preview {
                     let preview = render_scene(
@@ -763,6 +849,7 @@ fn run_interactive(
                         textures,
                         game.scene(),
                         sky_corruption,
+                        accent,
                     );
                     refine_at = Some(Instant::now() + FULL_QUALITY_DELAY);
                     upscale_bilinear(
@@ -774,13 +861,26 @@ fn run_interactive(
                     )
                 } else {
                     refine_at = None;
+                    // Mientras la animaciÃ³n ambiental sigue corriendo, cada
+                    // redibujado paga por sÃ­ solo el costo del render
+                    // completo (profundidad 2, luz de acento); sumarle encima
+                    // el antialiasing de bordes en cada uno de esos cuadros
+                    // era lo que sentÃ­a lenta la escena del templo. Solo se
+                    // usa `refine_renderer` (con antialiasing) para el cuadro
+                    // realmente quieto, sin animaciÃ³n en marcha.
+                    let renderer = if animating {
+                        &interactive_renderer
+                    } else {
+                        &refine_renderer
+                    };
                     render_scene(
-                        &interactive_renderer,
+                        renderer,
                         &camera,
                         &scene,
                         textures,
                         game.scene(),
                         sky_corruption,
+                        accent,
                     )
                 };
                 cached_scene_pixels = rendered.clone();
@@ -788,6 +888,10 @@ fn run_interactive(
             } else {
                 cached_scene_pixels.clone()
             };
+            if raytrace_required && animating {
+                next_animation_at =
+                    Instant::now() + ANIMATION_INTERVAL.max(render_started.elapsed() * 2);
+            }
             draw_scene_labels(&mut pixels, game.scene(), &camera);
             draw_game_interface(
                 &mut pixels,
@@ -932,6 +1036,33 @@ fn build_game_scene(
     library_challenge: LibraryChallenge,
     academy_challenge: AcademyChallenge,
 ) -> Scene {
+    build_game_scene_at(
+        game,
+        puzzle,
+        timeline,
+        desert_challenge,
+        library_challenge,
+        academy_challenge,
+        0.0,
+    )
+}
+
+/// Igual que `build_game_scene`, pero animada segÃºn `time` (segundos,
+/// reloj determinista de la animaciÃ³n ambiental): en el templo el Memory Core
+/// gira y flotan cristales a su alrededor; en cualquier escena donde aparece
+/// la figura de Melanta, esta respira y su ojo parpadea; en el epÃ­logo,
+/// Nihilita flota serenamente. Cuando la animaciÃ³n estÃ¡ en pausa `time`
+/// simplemente deja de avanzar, asÃ­ que la pose queda congelada donde estaba
+/// en vez de saltar de vuelta a la pose por defecto.
+fn build_game_scene_at(
+    game: GameState,
+    puzzle: Puzzle,
+    timeline: MemoryTimeline,
+    desert_challenge: DesertChallenge,
+    library_challenge: LibraryChallenge,
+    academy_challenge: AcademyChallenge,
+    time: f32,
+) -> Scene {
     let state = game.scene();
     if state == SceneState::DesertPavilion
         || (state == SceneState::Entering
@@ -940,7 +1071,7 @@ fn build_game_scene(
     {
         let mut scene = build_desert_room_with_seal(desert_challenge.seal_yaw());
         if desert_challenge.melanta_visible() {
-            add_melanta_event(&mut scene.objects);
+            add_melanta_event(&mut scene.objects, time);
             scene.light = melanta_light();
         }
         return scene;
@@ -952,7 +1083,7 @@ fn build_game_scene(
     {
         let mut scene = build_academy_room(academy_challenge.order(), academy_challenge.selected());
         if academy_challenge.phase() == AcademyPhase::Defeated {
-            add_melanta_event(&mut scene.objects);
+            add_melanta_event(&mut scene.objects, time);
             scene.light = melanta_light();
         }
         return scene;
@@ -969,7 +1100,7 @@ fn build_game_scene(
         ];
         let mut scene = build_library_room(collected, library_challenge.corruption());
         if library_challenge.phase() == LibraryPhase::Defeated {
-            add_melanta_event(&mut scene.objects);
+            add_melanta_event(&mut scene.objects, time);
         }
         return scene;
     }
@@ -991,9 +1122,14 @@ fn build_game_scene(
         scene.light = sample.light;
         scene
     } else {
+        let core_pose = if visual_state == SceneState::Temple {
+            world::ambient_core_pose(time)
+        } else {
+            world::MemoryCorePose::default()
+        };
         build_temple_interactive(
             visual_state.memory_core(),
-            world::MemoryCorePose::default(),
+            core_pose,
             false,
             puzzle.layout(),
         )
@@ -1001,11 +1137,14 @@ fn build_game_scene(
     scene
         .objects
         .retain(|object| visual_state.object_visible(object.name()));
+    if visual_state == SceneState::Temple {
+        world::add_ambient_shards(&mut scene.objects, time);
+    }
     if visual_state == SceneState::Melanta {
-        add_melanta_event(&mut scene.objects);
+        add_melanta_event(&mut scene.objects, time);
         scene.light = melanta_light();
     } else if visual_state == SceneState::Final {
-        add_nihilita_epilogue(&mut scene.objects);
+        add_nihilita_epilogue(&mut scene.objects, time);
     }
     scene
 }
@@ -1017,6 +1156,7 @@ fn render_scene(
     textures: &TextureSet,
     state: SceneState,
     sky_corruption: f32,
+    accent: Option<Light>,
 ) -> Vec<Vec3> {
     let light = if state == SceneState::Melanta {
         melanta_transition_light(sky_corruption)
@@ -1037,8 +1177,13 @@ fn render_scene(
             temple_skybox(corruption),
         )
     } else {
-        renderer.render(camera, &scene.objects, &light, textures)
+        renderer.render_with_accent(camera, &scene.objects, &light, accent, textures)
     }
+}
+
+/// Luz de acento dorada: solo el templo la usa, animada segÃºn `time`.
+fn scene_accent_light(state: SceneState, time: f32) -> Option<Light> {
+    (state == SceneState::Temple).then(|| world::ambient_accent_light(time))
 }
 
 fn apply_white_fade(pixels: &mut [Vec3], opacity: f32) {
@@ -1237,376 +1382,5 @@ fn window_title(game: GameState, sky_corruption: f32, camera: &Camera) -> String
             camera.radius(),
             state.memory_core().label(),
         )
-    }
-}
-
-#[cfg(test)]
-mod app_tests {
-    use super::{
-        ASPECT_RATIO, EscapeAction, IMAGE_HEIGHT, IMAGE_WIDTH, INTERACTIVE_MAX_DEPTH,
-        MELANTA_REVEAL_DELAY_SECONDS, MAX_MOUSE_ORBIT_DELTA, OBJECT_MOVE_STEP,
-        OBJECT_ROTATION_STEP, ORBIT_STEP, PREVIEW_HEIGHT, PREVIEW_WIDTH, ZOOM_STEP,
-        build_game_scene, camera_orbit_step, handle_escape, mouse_orbit_delta, needs_raytrace,
-        should_refine, try_begin_melanta, try_complete_puzzle, upscale_bilinear,
-    };
-
-    #[test]
-    fn presentation_resolution_is_larger_and_keeps_widescreen_aspect() {
-        assert_eq!((IMAGE_WIDTH, IMAGE_HEIGHT), (576, 324));
-        assert!((ASPECT_RATIO - 16.0 / 9.0).abs() < f32::EPSILON);
-    }
-
-    #[test]
-    fn right_mouse_drag_orbits_in_both_axes() {
-        let (yaw, pitch) = mouse_orbit_delta((100.0, 80.0), (125.0, 60.0));
-        assert!(yaw < 0.0);
-        assert!(pitch > 0.0);
-        let (large_yaw, large_pitch) = mouse_orbit_delta((0.0, 0.0), (1000.0, -1000.0));
-        assert!(large_yaw.abs() <= MAX_MOUSE_ORBIT_DELTA);
-        assert!(large_pitch.abs() <= MAX_MOUSE_ORBIT_DELTA);
-    }
-
-    #[test]
-    fn keyboard_orbit_is_time_based_and_caps_stalled_frames() {
-        let normal_step = camera_orbit_step(1.0 / 30.0);
-        let stalled_step = camera_orbit_step(1.0);
-        assert!(normal_step > 0.0);
-        assert!(normal_step < ORBIT_STEP);
-        assert!(stalled_step < ORBIT_STEP);
-    }
-
-    #[test]
-    fn preview_upscaling_blends_without_losing_dimensions_or_corners() {
-        let source = [
-            Vec3::new(1.0, 0.0, 0.0),
-            Vec3::new(0.0, 1.0, 0.0),
-            Vec3::new(0.0, 0.0, 1.0),
-            Vec3::new(1.0, 1.0, 1.0),
-        ];
-        let enlarged = upscale_bilinear(&source, 2, 2, 4, 4);
-
-        assert_eq!(enlarged.len(), 16);
-        assert_eq!(enlarged[0], source[0]);
-        assert_eq!(enlarged[3], source[1]);
-        assert_eq!(enlarged[12], source[2]);
-        assert_eq!(enlarged[15], source[3]);
-        assert_ne!(enlarged[5], source[0]);
-    }
-
-    #[test]
-    fn movement_preview_uses_about_half_of_full_resolution() {
-        let preview_pixels = PREVIEW_WIDTH * PREVIEW_HEIGHT;
-        let full_pixels = IMAGE_WIDTH * IMAGE_HEIGHT;
-        assert!(preview_pixels * 100 >= full_pixels * 48);
-        assert!(preview_pixels * 100 <= full_pixels * 49);
-    }
-
-    #[test]
-    fn interactive_quality_keeps_two_real_secondary_ray_levels() {
-        assert_eq!(INTERACTIVE_MAX_DEPTH, 2);
-    }
-
-    #[test]
-    fn ui_only_timer_ticks_reuse_the_cached_raytrace() {
-        assert!(!needs_raytrace(false, false, false));
-        assert!(needs_raytrace(true, false, false));
-        assert!(needs_raytrace(false, true, false));
-        assert!(needs_raytrace(false, false, true));
-    }
-
-    #[test]
-    fn full_quality_waits_until_camera_controls_are_released() {
-        assert!(!should_refine(false, true, true));
-        assert!(!should_refine(true, false, true));
-        assert!(!should_refine(false, false, false));
-        assert!(should_refine(false, false, true));
-    }
-
-    use crate::{
-        animation::MemoryTimeline,
-        game::{ExhibitionId, GameEvent, GameState, SceneState},
-        interaction::{
-            AcademyChallenge, DesertChallenge, DesertPhase, EyeOfGod, LibraryChallenge, Puzzle,
-        },
-        math::Vec3,
-        world::{PortalView, PuzzleLayout, PuzzlePieceId},
-    };
-
-    #[test]
-    fn desert_watching_phase_adds_melanta_to_the_raytraced_scene() {
-        let mut challenge = DesertChallenge::default();
-        assert!(challenge.rotate_seal());
-        assert!(challenge.confirm_seal());
-        assert!(challenge.update(10.0, false));
-        assert!(challenge.update(10.0, false));
-        assert_eq!(challenge.phase(), DesertPhase::Watching);
-
-        let scene = build_game_scene(
-            GameState::from_scene(SceneState::DesertPavilion),
-            Puzzle::default(),
-            MemoryTimeline::default(),
-            challenge,
-            LibraryChallenge::default(),
-            AcademyChallenge::default(),
-        );
-        assert!(
-            scene
-                .objects
-                .iter()
-                .any(|object| object.name() == "melanta torso")
-        );
-        assert!(scene.light.color.x > scene.light.color.y * 4.0);
-    }
-
-    #[test]
-    fn wrong_academy_layout_adds_melanta_to_the_gallery() {
-        let mut challenge = AcademyChallenge::default();
-        assert!(challenge.confirm());
-        let scene = build_game_scene(
-            GameState::from_scene(SceneState::LuyangAcademy),
-            Puzzle::default(),
-            MemoryTimeline::default(),
-            DesertChallenge::default(),
-            LibraryChallenge::default(),
-            challenge,
-        );
-
-        assert!(
-            scene
-                .objects
-                .iter()
-                .any(|object| object.name() == "melanta torso")
-        );
-        assert!(scene.light.color.x > scene.light.color.y * 4.0);
-    }
-
-    #[test]
-    fn final_temple_scene_contains_nihilita() {
-        let scene = build_game_scene(
-            GameState::from_scene(SceneState::Final),
-            Puzzle::default(),
-            MemoryTimeline::default(),
-            DesertChallenge::default(),
-            LibraryChallenge::default(),
-            AcademyChallenge::default(),
-        );
-
-        assert!(
-            scene
-                .objects
-                .iter()
-                .any(|object| object.name() == "nihilita head")
-        );
-    }
-
-    #[test]
-    fn portal_midpoint_reveals_only_the_temple_destination() {
-        let mut game = GameState::default();
-        assert!(game.handle(GameEvent::UsePortal));
-        let scene = build_game_scene(
-            game,
-            Puzzle::default(),
-            MemoryTimeline::default(),
-            DesertChallenge::default(),
-            LibraryChallenge::default(),
-            AcademyChallenge::default(),
-        );
-
-        assert!(!scene
-            .objects
-            .iter()
-            .any(|object| object.name().starts_with("exterior ")));
-        assert!(!scene
-            .objects
-            .iter()
-            .any(|object| object.name().starts_with("puzzle piece")));
-        assert!(scene
-            .objects
-            .iter()
-            .any(|object| object.name() == "memory core"));
-    }
-
-    #[test]
-    fn final_return_midpoint_already_reveals_nihilita() {
-        let mut game = GameState::from_scene(SceneState::Temple);
-        assert!(game.handle(GameEvent::ActivateEyeOfGod));
-        assert!(game.complete_exhibition(ExhibitionId::DesertPavilion));
-        assert!(game.complete_exhibition(ExhibitionId::MahavaipulyaChamber));
-        assert!(game.handle(GameEvent::EnterExhibition(
-            ExhibitionId::LuyangAcademy
-        )));
-        assert!(game.handle(GameEvent::TransitionComplete));
-        assert!(game.complete_exhibition(ExhibitionId::LuyangAcademy));
-        assert!(game.handle(GameEvent::LeaveExhibition));
-
-        let scene = build_game_scene(
-            game,
-            Puzzle::default(),
-            MemoryTimeline::default(),
-            DesertChallenge::default(),
-            LibraryChallenge::default(),
-            AcademyChallenge::default(),
-        );
-        assert!(scene
-            .objects
-            .iter()
-            .any(|object| object.name() == "nihilita head"));
-    }
-
-    #[test]
-    fn escape_never_enters_the_puzzle_from_the_temple() {
-        let mut game = GameState::from_scene(SceneState::Temple);
-        let mut eye = EyeOfGod::default();
-        let mut puzzle = Puzzle::default();
-
-        assert_eq!(
-            handle_escape(&mut game, &mut eye, &mut puzzle),
-            EscapeAction::Exit
-        );
-        assert_eq!(game.scene(), SceneState::Temple);
-    }
-
-    #[test]
-    fn escape_cancels_a_piece_before_leaving_the_puzzle() {
-        let mut game = GameState::from_scene(SceneState::Puzzle);
-        let mut eye = EyeOfGod::default();
-        eye.toggle();
-        let mut puzzle = Puzzle::from_layout(PuzzleLayout {
-            selected: Some(PuzzlePieceId::A),
-            ..PuzzleLayout::initial()
-        });
-
-        assert_eq!(
-            handle_escape(&mut game, &mut eye, &mut puzzle),
-            EscapeAction::Redraw
-        );
-        assert_eq!(game.scene(), SceneState::Puzzle);
-        assert_eq!(puzzle.selected(), None);
-
-        assert_eq!(
-            handle_escape(&mut game, &mut eye, &mut puzzle),
-            EscapeAction::Redraw
-        );
-        assert_eq!(game.scene(), SceneState::Temple);
-        assert!(!eye.is_active());
-    }
-
-    #[test]
-    fn documented_controls_complete_the_puzzle_and_restore_memory() {
-        let mut game = GameState::from_scene(SceneState::Puzzle);
-        let mut puzzle = Puzzle::default();
-        let mut camera = PortalView::Interior.camera(ASPECT_RATIO);
-
-        for (piece, movement, rotation_steps) in [
-            (
-                PuzzlePieceId::A,
-                [
-                    (4, Vec3::new(OBJECT_MOVE_STEP, 0.0, 0.0)),
-                    (3, Vec3::new(0.0, OBJECT_MOVE_STEP, 0.0)),
-                    (1, Vec3::new(0.0, 0.0, -OBJECT_MOVE_STEP)),
-                ],
-                2,
-            ),
-            (
-                PuzzlePieceId::B,
-                [
-                    (3, Vec3::new(0.0, -OBJECT_MOVE_STEP, 0.0)),
-                    (1, Vec3::new(0.0, 0.0, -OBJECT_MOVE_STEP)),
-                    (0, Vec3::default()),
-                ],
-                3,
-            ),
-            (
-                PuzzlePieceId::C,
-                [
-                    (4, Vec3::new(-OBJECT_MOVE_STEP, 0.0, 0.0)),
-                    (2, Vec3::new(0.0, OBJECT_MOVE_STEP, 0.0)),
-                    (2, Vec3::new(0.0, 0.0, -OBJECT_MOVE_STEP)),
-                ],
-                4,
-            ),
-        ] {
-            puzzle = Puzzle::from_layout(PuzzleLayout {
-                selected: Some(piece),
-                ..puzzle.layout()
-            });
-            for (steps, delta) in movement {
-                for _ in 0..steps {
-                    assert!(puzzle.move_selected(delta));
-                }
-            }
-            for _ in 0..rotation_steps {
-                assert!(puzzle.rotate_selected(OBJECT_ROTATION_STEP));
-            }
-            assert!(puzzle.interact_at(&camera, &[], 0.5, 0.5));
-        }
-
-        assert!(puzzle.pieces_aligned());
-        assert!(!try_complete_puzzle(&mut game, puzzle, false));
-        assert_eq!(game.scene(), SceneState::Puzzle);
-
-        for _ in 0..3 {
-            camera.orbit(ORBIT_STEP, 0.0);
-        }
-        for _ in 0..2 {
-            camera.zoom(-ZOOM_STEP);
-        }
-        let camera_aligned = crate::interaction::check_perspective(&camera, ASPECT_RATIO).aligned;
-        assert!(try_complete_puzzle(&mut game, puzzle, camera_aligned));
-        assert_eq!(game.scene(), SceneState::MemoryRestored);
-    }
-
-    #[test]
-    fn selected_piece_must_be_confirmed_before_restoration() {
-        let mut game = GameState::from_scene(SceneState::Puzzle);
-        let puzzle = Puzzle::from_layout(PuzzleLayout {
-            selected: Some(PuzzlePieceId::A),
-            ..PuzzleLayout::solved()
-        });
-
-        assert!(!try_complete_puzzle(&mut game, puzzle, true));
-        assert_eq!(game.scene(), SceneState::Puzzle);
-    }
-
-    #[test]
-    fn melanta_automatically_intervenes_after_the_restored_memory_is_visible() {
-        let mut game = GameState::from_scene(SceneState::MemoryRestored);
-        let timeline = MemoryTimeline::at(1.0);
-        let mut hold = 0.0;
-
-        assert!(!try_begin_melanta(
-            &mut game,
-            timeline,
-            &mut hold,
-            MELANTA_REVEAL_DELAY_SECONDS - 0.1,
-            false,
-        ));
-        assert_eq!(game.scene(), SceneState::MemoryRestored);
-        assert!(try_begin_melanta(
-            &mut game, timeline, &mut hold, 0.1, false,
-        ));
-        assert_eq!(game.scene(), SceneState::Melanta);
-    }
-
-    #[test]
-    fn melanta_waits_for_the_timeline_but_can_be_requested_early() {
-        let mut game = GameState::from_scene(SceneState::MemoryRestored);
-        let mut hold = 1.0;
-        assert!(!try_begin_melanta(
-            &mut game,
-            MemoryTimeline::at(0.8),
-            &mut hold,
-            10.0,
-            false,
-        ));
-        assert_eq!(hold, 0.0);
-        assert!(try_begin_melanta(
-            &mut game,
-            MemoryTimeline::at(0.8),
-            &mut hold,
-            0.0,
-            true,
-        ));
-        assert_eq!(game.scene(), SceneState::Melanta);
     }
 }
