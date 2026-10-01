@@ -34,18 +34,6 @@ El mando se detecta automáticamente. Con mando, `A` interactúa con el objeto q
 5. En la biblioteca, recoge tres páginas antes de que termine el tiempo.
 6. En la academia, selecciona fragmentos, cambia su orden y pulsa el botón central.
 
-## Texturas
-
-El juego busca estas texturas PNG en `assets/textures/`:
-
-| Archivo | Uso | Formato recomendado |
-|---|---|---|
-| `domain_door.png` | Puerta doble del dominio | PNG RGB, proporción 3:4 |
-| `library_page.png` | Páginas del reto de biblioteca | PNG RGB vertical, proporción 2:3 |
-| `cursor_nihilita.png` | Cursor de Nihilita | PNG RGBA transparente con cuatro cuadros horizontales: normal, interactivo, clic y final |
-
-Si falta una textura de puerta o página, el juego utiliza su diseño procedural interno como respaldo.
-
 ## Audio
 
 Coloca los archivos en `assets/audio/`. Los formatos `.mp3`, `.mpeg` y `.ogg` se aceptan; los archivos actuales usan `.mpeg` con contenido MP3.
