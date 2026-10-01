@@ -178,27 +178,37 @@ impl AudioDirector {
             self.clips.insert(path.to_path_buf(), Arc::from(&bytes[offset..]));
         }
         let bytes = Arc::clone(self.clips.get(path)?);
-        let mp3 = bytes.len() >= 2 && bytes[0] == 0xff && bytes[1] & 0xe0 == 0xe0;
-        let result = if mp3 { Decoder::new_mp3(Cursor::new(bytes)) }
-            else { Decoder::new(Cursor::new(bytes)) };
-        let mut source = match result {
-            Ok(source) => source,
-            Err(error) => { eprintln!("No se pudo decodificar {}: {error}", path.display()); return None; }
-        };
-        let channels = source.channels();
-        let limit = source.sample_rate() as usize * 5;
-        for _ in 0..limit {
-            let mut audible = false;
-            for _ in 0..channels {
-                let Some(sample) = source.next() else {
-                    eprintln!("Audio vacio o sin muestras audibles: {}", path.display());
-                    return None;
-                };
-                audible |= (sample as f32).abs() > 32.0;
-            }
-            if audible { break; }
+        let is_mp3 = bytes.len() >= 2 && bytes[0] == 0xff && bytes[1] & 0xe0 == 0xe0;
+        if !is_mp3 {
+            return match Decoder::new(Cursor::new(bytes)) {
+                Ok(source) => Some(source),
+                Err(error) => {
+                    eprintln!("No se pudo decodificar {}: {error}", path.display());
+                    None
+                }
+            };
         }
-        Some(source)
+
+        // Do not consume samples before playing. Some generated MP3s use the bit reservoir
+        // of their first frame, and pre-reading them can make Symphonia reject the stream.
+        let mut last_error = None;
+        for offset in mp3_start_offsets(&bytes) {
+            let payload: Arc<[u8]> = if offset == 0 {
+                Arc::clone(&bytes)
+            } else {
+                Arc::from(&bytes[offset..])
+            };
+            match Decoder::new_mp3(Cursor::new(payload)) {
+                Ok(source) => return Some(source),
+                Err(error) => last_error = Some(error.to_string()),
+            }
+        }
+        eprintln!(
+            "No se pudo decodificar {}: {}",
+            path.display(),
+            last_error.unwrap_or_else(|| "archivo MP3 invalido".to_string())
+        );
+        None
     }
 
     pub fn enter_exhibition(&mut self, exhibition: ExhibitionId) {
@@ -238,6 +248,25 @@ fn audio_payload_offset(bytes: &[u8]) -> usize {
         offset = next;
     }
     offset
+}
+
+fn mp3_start_offsets(bytes: &[u8]) -> Vec<usize> {
+    let mut offsets = vec![0];
+    for offset in 1..bytes.len().saturating_sub(3) {
+        let version_and_layer = bytes[offset + 1];
+        let bitrate_and_rate = bytes[offset + 2];
+        let frame_header = bytes[offset] == 0xff
+            && version_and_layer & 0xe0 == 0xe0
+            && version_and_layer & 0x18 != 0x08
+            && bitrate_and_rate & 0xf0 != 0
+            && bitrate_and_rate & 0xf0 != 0xf0
+            && bitrate_and_rate & 0x0c != 0x0c;
+        if frame_header {
+            offsets.push(offset);
+            if offsets.len() == 96 { break; }
+        }
+    }
+    offsets
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]

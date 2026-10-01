@@ -66,7 +66,9 @@ impl ControllerInput {
             dpad_up: gamepad.is_pressed(Button::DPadUp),
             dpad_down: gamepad.is_pressed(Button::DPadDown),
         };
-        self.left_stick = (deadzone(gamepad.value(Axis::LeftStickX)), deadzone(gamepad.value(Axis::LeftStickY)));
+        // Some Xbox controller mappings expose the two left-stick axes reversed.
+        // Normalize them here so the rest of the game always receives (horizontal, vertical).
+        self.left_stick = (deadzone(gamepad.value(Axis::LeftStickY)), deadzone(gamepad.value(Axis::LeftStickX)));
         self.right_stick = (deadzone(gamepad.value(Axis::RightStickX)), deadzone(gamepad.value(Axis::RightStickY)));
     }
 

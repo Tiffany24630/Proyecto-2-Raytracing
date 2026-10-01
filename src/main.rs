@@ -47,6 +47,7 @@ const ZOOM_STEP: f32 = 0.4;
 const MOUSE_ORBIT_SENSITIVITY: f32 = 0.003;
 const MAX_MOUSE_ORBIT_DELTA: f32 = 4.0_f32.to_radians();
 const MOUSE_WHEEL_ZOOM_STEP: f32 = 0.35;
+const CONTROLLER_CURSOR_SPEED: f32 = 430.0;
 const SKY_TRANSITION_SECONDS: f32 = 3.0;
 const MELANTA_REVEAL_DELAY_SECONDS: f32 = 2.0;
 const PORTAL_TRANSITION_SECONDS: f32 = 2.4;
@@ -277,6 +278,8 @@ fn run_interactive(
     let mut left_mouse_was_down = false;
     let mut help_visible = false;
     let mut cursor_position = None;
+    let mut controller_cursor = (IMAGE_WIDTH as f32 * 0.5, IMAGE_HEIGHT as f32 * 0.5);
+    let mut controller_cursor_active = false;
     let mut last_activity = Instant::now();
     let mut refine_at = None;
     let mut animations_enabled = true;
@@ -346,6 +349,15 @@ fn run_interactive(
         let now = Instant::now();
         let delta_seconds = now.duration_since(last_tick).as_secs_f32();
         last_tick = now;
+        let (controller_cursor_x, controller_cursor_y) = controller.right_stick();
+        if controller_cursor_x != 0.0 || controller_cursor_y != 0.0 {
+            let cursor_step = CONTROLLER_CURSOR_SPEED * delta_seconds.min(MAX_INPUT_DELTA_SECONDS);
+            controller_cursor.0 = (controller_cursor.0 + controller_cursor_x * cursor_step)
+                .clamp(0.0, IMAGE_WIDTH as f32 - 1.0);
+            controller_cursor.1 = (controller_cursor.1 - controller_cursor_y * cursor_step)
+                .clamp(0.0, IMAGE_HEIGHT as f32 - 1.0);
+            controller_cursor_active = true;
+        }
         let mut changed = false;
         let mut scene_changed = false;
         let mut prefer_preview = false;
@@ -408,7 +420,7 @@ fn run_interactive(
                     }
                 }
                 SceneState::Temple => {
-                    let (u, v) = interaction_uv(&window, controller_confirm);
+                    let (u, v) = interaction_uv(&window, controller_cursor_active.then_some(controller_cursor));
                     let exhibition = exhibition_at(&camera, &scene.objects, u, v);
                     if let Some(exhibition) = exhibition {
                         let destination_view = match exhibition {
@@ -439,7 +451,7 @@ fn run_interactive(
                     }
                 }
                 SceneState::Puzzle => {
-                    let (u, v) = interaction_uv(&window, controller_confirm);
+                    let (u, v) = interaction_uv(&window, controller_cursor_active.then_some(controller_cursor));
                     let interacted = puzzle.interact_at(&camera, &scene.objects, u, v);
                     if interacted {
                         changed = true;
@@ -471,7 +483,7 @@ fn run_interactive(
                     }
                 }
                 SceneState::MahavaipulyaChamber => {
-                    let (u, v) = interaction_uv(&window, controller_confirm);
+                    let (u, v) = interaction_uv(&window, controller_cursor_active.then_some(controller_cursor));
                     if let Some(page) = library_page_at(&camera, &scene.objects, u, v) {
                         if library_challenge.collect(page) {
                             audio.play_effect(audio::SoundEffect::PageCollect);
@@ -517,7 +529,7 @@ fn run_interactive(
                             scene_changed = true;
                         }
                         AcademyPhase::Arranging => {
-                            let (u, v) = interaction_uv(&window, controller_confirm);
+                            let (u, v) = interaction_uv(&window, controller_cursor_active.then_some(controller_cursor));
                             match academy_target_at(&camera, &scene.objects, u, v) {
                                 Some(AcademyTarget::Fragment(fragment)) => {
                                     if academy_challenge.select(fragment) {
@@ -662,7 +674,7 @@ fn run_interactive(
             }
             let (stick_x, stick_y) = controller.left_stick();
             if (stick_x != 0.0 || stick_y != 0.0)
-                && puzzle.move_selected(Vec3::new(stick_x * OBJECT_MOVE_STEP, 0.0, -stick_y * OBJECT_MOVE_STEP))
+                && puzzle.move_selected(Vec3::new(stick_x * OBJECT_MOVE_STEP, 0.0, stick_y * OBJECT_MOVE_STEP))
             {
                 changed = true;
                 scene_changed = true;
@@ -696,11 +708,31 @@ fn run_interactive(
                 changed = true;
                 prefer_preview = true;
             }
+            if camera_enabled && controller.dpad_left() {
+                camera.orbit(-orbit_step, 0.0);
+                changed = true;
+                prefer_preview = true;
+            }
+            if camera_enabled && controller.dpad_right() {
+                camera.orbit(orbit_step, 0.0);
+                changed = true;
+                prefer_preview = true;
+            }
+            if camera_enabled && controller.dpad_up() {
+                camera.orbit(0.0, orbit_step);
+                changed = true;
+                prefer_preview = true;
+            }
+            if camera_enabled && controller.dpad_down() {
+                camera.orbit(0.0, -orbit_step);
+                changed = true;
+                prefer_preview = true;
+            }
         }
         if camera_enabled && !(game.scene() == SceneState::Puzzle && puzzle.selected().is_some()) {
-            let (stick_x, stick_y) = controller.right_stick();
+            let (stick_x, stick_y) = controller.left_stick();
             if stick_x != 0.0 || stick_y != 0.0 {
-                camera.orbit(stick_x * CAMERA_ORBIT_SPEED * delta_seconds, -stick_y * CAMERA_ORBIT_SPEED * delta_seconds);
+                camera.orbit(stick_y * CAMERA_ORBIT_SPEED * delta_seconds, stick_x * CAMERA_ORBIT_SPEED * delta_seconds);
                 changed = true;
                 prefer_preview = true;
             }
@@ -861,7 +893,13 @@ fn run_interactive(
                 || key_held(&window, Key::Equal)
                 || key_held(&window, Key::NumPadPlus)
                 || key_held(&window, Key::Minus)
-                || key_held(&window, Key::NumPadMinus));
+                || key_held(&window, Key::NumPadMinus)
+                || controller.dpad_left()
+                || controller.dpad_right()
+                || controller.dpad_up()
+                || controller.dpad_down()
+                || controller.left_stick().0 != 0.0
+                || controller.left_stick().1 != 0.0);
         if camera_input_active && refine_at.is_some() {
             refine_at = Some(Instant::now() + FULL_QUALITY_DELAY);
         }
@@ -952,17 +990,22 @@ fn run_interactive(
         }
 
         let mouse = window.get_mouse_pos(MouseMode::Discard);
+        if mouse != cursor_position {
+            controller_cursor_active = false;
+        }
         if mouse != cursor_position || left_mouse_down || window.get_mouse_down(MouseButton::Right)
-            || !window.get_keys().is_empty() || window.get_scroll_wheel().is_some() {
+            || !window.get_keys().is_empty() || window.get_scroll_wheel().is_some()
+            || controller_cursor_x != 0.0 || controller_cursor_y != 0.0 {
             last_activity = Instant::now();
         }
         cursor_position = mouse;
-        window.set_cursor_visibility(mouse.is_none());
+        let active_cursor = if controller_cursor_active { Some(controller_cursor) } else { mouse };
+        window.set_cursor_visibility(active_cursor.is_none());
         display_buffer.copy_from_slice(&buffer);
-        if let Some(position) = mouse {
-            let (u, v) = mouse_uv(&window);
+        if let Some(position) = active_cursor {
+            let (u, v) = cursor_uv(position);
             let hovered = match game.scene() {
-                SceneState::Exterior => portal_hovered(&window, &camera, &scene),
+                SceneState::Exterior => portal_hovered_at(&camera, &scene, u, v),
                 SceneState::Temple => exhibition_at(&camera, &scene.objects, u, v)
                     .is_some_and(|id| game.exhibitions().can_enter(id)),
                 SceneState::MahavaipulyaChamber => library_page_at(&camera, &scene.objects, u, v).is_some()
@@ -1415,6 +1458,10 @@ fn set_indicator_pixel(pixels: &mut [Vec3], x: i32, y: i32, color: Vec3) {
 
 fn portal_hovered(window: &Window, camera: &Camera, scene: &Scene) -> bool {
     let (u, v) = mouse_uv(window);
+    portal_hovered_at(camera, scene, u, v)
+}
+
+fn portal_hovered_at(camera: &Camera, scene: &Scene, u: f32, v: f32) -> bool {
     let ray = camera.ray(u, v);
     scene.objects.iter()
         .filter_map(|object| object.hit(&ray, 0.001, f32::INFINITY))
@@ -1425,12 +1472,16 @@ fn portal_hovered(window: &Window, camera: &Camera, scene: &Scene) -> bool {
 fn mouse_uv(window: &Window) -> (f32, f32) {
     window
         .get_mouse_pos(MouseMode::Clamp)
-        .map(|(x, y)| (x / IMAGE_WIDTH as f32, 1.0 - y / IMAGE_HEIGHT as f32))
+        .map(cursor_uv)
         .unwrap_or((0.5, 0.5))
 }
 
-fn interaction_uv(window: &Window, controller_confirm: bool) -> (f32, f32) {
-    if controller_confirm { (0.5, 0.5) } else { mouse_uv(window) }
+fn cursor_uv((x, y): (f32, f32)) -> (f32, f32) {
+    (x / IMAGE_WIDTH as f32, 1.0 - y / IMAGE_HEIGHT as f32)
+}
+
+fn interaction_uv(window: &Window, controller_cursor: Option<(f32, f32)>) -> (f32, f32) {
+    controller_cursor.map(cursor_uv).unwrap_or_else(|| mouse_uv(window))
 }
 
 fn window_title(game: GameState, sky_corruption: f32, camera: &Camera) -> String {
