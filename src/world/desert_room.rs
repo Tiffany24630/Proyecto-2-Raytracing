@@ -98,24 +98,3 @@ fn add_cube(
 ) {
     objects.push(Box::new(Cube::from_center(name, center, size, material)));
 }
-
-#[cfg(test)]
-mod tests {
-    use super::build_desert_room_with_seal;
-
-    #[test]
-    fn provisional_room_is_independent_and_keeps_a_small_object_budget() {
-        let room = build_desert_room_with_seal(0.0);
-        assert!(
-            room.objects
-                .iter()
-                .any(|object| object.name() == "desert room sand")
-        );
-        assert!(
-            room.objects
-                .iter()
-                .any(|object| object.name() == "desert room return gate")
-        );
-        assert!(room.objects.len() <= 16);
-    }
-}

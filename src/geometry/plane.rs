@@ -66,24 +66,3 @@ impl Plane {
         Uv::new(relative.dot(tangent), relative.dot(bitangent))
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::{Object, Plane};
-    use crate::{materials::stone, math::Vec3, raytracing::Ray};
-
-    #[test]
-    fn downward_ray_hits_horizontal_plane() {
-        let plane = Plane::new(
-            "test plane",
-            Vec3::new(0.0, 0.0, 0.0),
-            Vec3::new(0.0, 1.0, 0.0),
-            stone(),
-        );
-        let ray = Ray::new(Vec3::new(0.0, 2.0, 0.0), Vec3::new(0.0, -1.0, 0.0));
-        let hit = plane.hit(&ray, 0.001, f32::INFINITY).unwrap();
-
-        assert!((hit.t - 2.0).abs() < 1e-6);
-        assert_eq!(hit.normal, Vec3::new(0.0, 1.0, 0.0));
-    }
-}

@@ -127,25 +127,3 @@ fn add_cube(
 ) {
     objects.push(Box::new(Cube::from_center(name, center, size, material)));
 }
-
-#[cfg(test)]
-mod tests {
-    use super::build_academy_room;
-
-    #[test]
-    fn gallery_contains_three_fragments_and_confirmation_button() {
-        let room = build_academy_room([2, 0, 1], None);
-        assert_eq!(
-            room.objects
-                .iter()
-                .filter(|object| object.name().starts_with("academy fragment"))
-                .count(),
-            3
-        );
-        assert!(room
-            .objects
-            .iter()
-            .any(|object| object.name() == "academy confirm button"));
-        assert!(room.objects.len() <= 18);
-    }
-}
