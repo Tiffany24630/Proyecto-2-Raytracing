@@ -131,6 +131,13 @@ impl AudioDirector {
     pub fn set_melanta(&mut self, active: bool, looping: bool) {
         let appeared = active && !self.melanta_active;
         let mode_changed = self.melanta_looping != looping;
+        if !active {
+            if let Some(voice) = self.melanta.take() { voice.stop(); }
+            self.melanta_active = false;
+            self.melanta_looping = false;
+            if let Some(music) = &self.music { music.set_volume(0.65); }
+            return;
+        }
         self.melanta_active = active;
         if self.melanta_looping && !looping {
             if let Some(voice) = self.melanta.take() { voice.stop(); }
